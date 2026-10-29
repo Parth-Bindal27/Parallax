@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production builds
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# Database and runtime data (do not commit runtime snapshots or db)
+data/parallax.db
+data/parallax.db*
+data/snapshots/*
+data/artifacts/*
+!data/snapshots/.gitkeep
+!data/artifacts/.gitkeep
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Test outputs
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/

@@ -1,0 +1,79 @@
+{
+  "system": "PARALLAX: Verified Web Missions",
+  "challengeTarget": "AdaL by Sylph",
+  "recordedAt": "2026-10-29T18:28:00.000Z",
+  "runner": "Playwright Chromium + Vitest + Node.js v24.10.9",
+  "signatureScenario": {
+    "title": "5 Student AI Tools Verification & Controlled Drift",
+    "prompt": "Research five AI tools useful for university students. Compare their features, pricing, free plans, and official URLs. Capture supporting quotations from reliable sources, generate a CSV and a detailed report, verify every claim against its evidence, and tell me if any source information changes later.",
+    "stages": [
+      {
+        "stage": "Stage A & B: Baseline Mission & Verification",
+        "verdict": "PASS",
+        "entitiesAudited": ["StudyPilot AI", "ScholarSync", "PaperPulse", "CiteCraft", "QuizForge"],
+        "claimsExtracted": 20,
+        "evidenceRecordsCreated": 20,
+        "deterministicChecksEvaluated": 85,
+        "checksPassed": 85,
+        "checksFailed": 0,
+        "artifactsGenerated": [
+          "student-ai-tools-comparison-v1.csv",
+          "student-ai-tools-verification-report-v1.md",
+          "student-ai-tools-manifest-v1.json",
+          "student-ai-tools-audit-v1.html"
+        ],
+        "readbackValidation": "PASS"
+      },
+      {
+        "stage": "Stage C: Controlled Drift Mutation",
+        "targetEntity": "StudyPilot AI",
+        "field": "monthlyPrice",
+        "baselineValue": "₹499 / month",
+        "mutatedValue": "₹699 / month",
+        "mutationType": "price_increase"
+      },
+      {
+        "stage": "Stage D: Drift Detection & Line Diffing",
+        "hasDrift": true,
+        "lineDiff": {
+          "removed": ["Pricing: ₹499 / month (billed monthly) or ₹399 / month (annual)"],
+          "added": ["Pricing: ₹699 / month (billed monthly) or ₹499 / month (annual)"]
+        }
+      },
+      {
+        "stage": "Stage E: Lineage Traversal & Impact Analysis",
+        "totalClaims": 20,
+        "staleClaims": 1,
+        "staleClaimSubject": "StudyPilot AI",
+        "staleClaimPredicate": "monthlyPrice",
+        "unrelatedClaimsPreserved": 19,
+        "impactedArtifacts": ["CSV", "MARKDOWN", "JSON", "HTML"]
+      },
+      {
+        "stage": "Stage F: Selective Revalidation",
+        "revalidationStatus": "completed",
+        "updatedClaimValue": 699,
+        "updatedClaimStatus": "verified",
+        "artifactsRegenerated": [
+          "student-ai-tools-comparison-v2.csv",
+          "student-ai-tools-verification-report-v2.md",
+          "student-ai-tools-manifest-v2.json",
+          "student-ai-tools-audit-v2.html"
+        ],
+        "historicalArtifactsPreserved": true
+      },
+      {
+        "stage": "Stage G: Regression Verification",
+        "hasDrift": false,
+        "staleClaimsIdentified": 0,
+        "falsePositivesDetected": 0
+      }
+    ]
+  },
+  "testExecutionSummary": {
+    "unitAndIntegrationSuites": 6,
+    "unitAndIntegrationTestsPassed": 10,
+    "playwrightE2ETestsPassed": 2,
+    "passRate": "100%"
+  }
+}

@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  parallax:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: parallax-app
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DATABASE_PATH=/app/data/parallax.db
+      - SNAPSHOT_STORAGE_PATH=/app/data/snapshots
+      - ARTIFACT_STORAGE_PATH=/app/data/artifacts
+      - ALLOW_LOCAL_FIXTURES=false
+      - SSRF_PROTECTION_ENABLED=true
+      - LLM_PROVIDER=demo
+      - LLM_MODEL=demo-deterministic-v1
+    volumes:
+      - parallax_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  parallax_data:
+    driver: local

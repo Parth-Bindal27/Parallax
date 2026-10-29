@@ -1,0 +1,31 @@
+{
+  "name": "parallax",
+  "version": "1.0.0",
+  "description": "PARALLAX — Verified Web Missions: AI-native browser workspace for verifiable web missions",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n \"SERVER,WEB\" -c \"cyan,magenta\" \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:server": "npm --workspace=@parallax/server run dev",
+    "dev:web": "npm --workspace=@parallax/web run dev",
+    "build": "npm --workspace=@parallax/shared run build && npm --workspace=@parallax/server run build && npm --workspace=@parallax/web run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "typecheck": "npm run --workspaces --if-present typecheck",
+    "demo": "tsx tests/scripts/run-demo.ts",
+    "demo:reset": "tsx tests/scripts/reset-fixture.ts",
+    "demo:mutate": "tsx tests/scripts/mutate-fixture.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^24.10.9",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  }
+}

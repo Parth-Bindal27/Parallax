@@ -1,0 +1,74 @@
+@import '@xyflow/react/dist/style.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light dark;
+}
+
+:root:has(> head > meta[name="color-scheme"][content="dark"]) {
+  color-scheme: dark;
+}
+
+:root:has(> head > meta[name="color-scheme"][content="light"]) {
+  color-scheme: light;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a101d;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1c2b47;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #263758;
+}
+
+/* Glassmorphism surfaces */
+.glass-panel {
+  background: rgba(16, 25, 45, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(56, 75, 112, 0.35);
+}
+
+.glass-panel-hover {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-panel-hover:hover {
+  border-color: rgba(6, 182, 212, 0.4);
+  box-shadow: 0 4px 20px -2px rgba(6, 182, 212, 0.15);
+}
+
+/* Glow effects */
+.glow-cyan {
+  box-shadow: 0 0 20px -3px rgba(6, 182, 212, 0.3);
+}
+
+.glow-stale {
+  box-shadow: 0 0 20px -3px rgba(245, 158, 11, 0.4);
+}
+
+/* React Flow styling customizations */
+.react-flow__attribution {
+  display: none !important;
+}
+
+.react-flow__handle {
+  background: #06b6d4 !important;
+  border: 2px solid #0f172a !important;
+  width: 8px !important;
+  height: 8px !important;
+}
