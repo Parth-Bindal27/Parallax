@@ -17,7 +17,14 @@ import {
   Zap,
   Hand,
   RefreshCw,
-  RotateCcw
+  RotateCcw,
+  KeyRound,
+  LogIn,
+  Eye,
+  EyeOff,
+  User,
+  Lock,
+  ArrowRight
 } from 'lucide-react';
 import { api } from '../api/client.js';
 import type { BrowserActionEvent, MissionEvent, SourceDriftReport } from '@parallax/shared';
@@ -34,6 +41,8 @@ export function LiveExecution() {
   const [manualSelector, setManualSelector] = useState('');
   const [driftStatusMessage, setDriftStatusMessage] = useState<string | null>(null);
   const [latestDriftReport, setLatestDriftReport] = useState<SourceDriftReport | null>(null);
+  const [signInCredentials, setSignInCredentials] = useState<Record<string, { username: string; password: string; token: string }>>({});
+  const [showPassword, setShowPassword] = useState<Record<string, boolean>>({});
 
   // If no mission ID, redirect to workspace
   useEffect(() => {
@@ -143,9 +152,13 @@ export function LiveExecution() {
   });
 
   const resolveApprovalMutation = useMutation({
-    mutationFn: ({ approvalId, decision }: { approvalId: string; decision: 'approve' | 'deny' }) =>
-      api.resolveApproval(approvalId, decision),
-    onSuccess: () => refetchApprovals()
+    mutationFn: ({ approvalId, decision, formData }: { approvalId: string; decision: 'approve' | 'deny'; formData?: Record<string, string> }) =>
+      api.resolveApproval(approvalId, decision, undefined, formData),
+    onSuccess: () => {
+      refetchApprovals();
+      refetchActions();
+      queryClient.invalidateQueries({ queryKey: ['actions', missionId] });
+    }
   });
 
   const simulateApprovalMutation = useMutation({
@@ -156,6 +169,12 @@ export function LiveExecution() {
         reason: 'Autonomous agent attempted to submit payment credentials. Autonomy level INTERACTIVE_NAVIGATION blocks unapproved transactions.',
         riskLevel: 'critical'
       }),
+    onSuccess: () => refetchApprovals()
+  });
+
+  const simulateSignInMutation = useMutation({
+    mutationFn: () =>
+      api.simulateSignInRequired(missionId!, sourcesData?.sources?.[0]?.url || 'https://app.linear.app/login'),
     onSuccess: () => refetchApprovals()
   });
 
@@ -303,6 +322,17 @@ export function LiveExecution() {
               <span>Test Policy Gate</span>
             </button>
 
+            {/* Simulate Sign-in Required */}
+            <button
+              onClick={() => simulateSignInMutation.mutate()}
+              disabled={simulateSignInMutation.isPending}
+              title="Demonstrate Human Interaction Needed sign-in gate and human form filling"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 text-indigo-900 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-500/40 text-xs font-bold transition-colors cursor-pointer"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Simulate Sign-in Gate</span>
+            </button>
+
             <button
               onClick={() => navigate(`/missions/${missionId}/lineage`)}
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-cyan-50 dark:bg-brand-cyan/20 hover:bg-cyan-100 text-cyan-800 dark:text-brand-cyan border border-cyan-200 dark:border-brand-cyan/40 text-xs font-bold transition-colors cursor-pointer"
@@ -356,35 +386,191 @@ export function LiveExecution() {
         </div>
       </div>
 
-      {/* Pending Approval Dialog (if policy stopped action) */}
+      {/* Pending Approval Dialog (if policy stopped action or requires Human Interaction) */}
       {pendingApprovals.length > 0 && (
-        <div className="p-5 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border-2 border-amber-300 dark:border-amber-500/50 shadow-sm space-y-3">
+        <div className="p-5 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border-2 border-amber-300 dark:border-amber-500/50 shadow-sm space-y-4">
           <div className="flex items-center gap-2 text-amber-900 dark:text-amber-300 font-bold text-sm">
             <ShieldAlert className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-            <span>Action Approval Required Under Autonomy Policy</span>
+            <span>Human-in-the-Loop Interaction Gate (Autonomy Policy)</span>
           </div>
-          {pendingApprovals.map((app) => (
-            <div key={app.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-3.5 rounded-xl bg-white dark:bg-workspace-900/90 border border-amber-200 dark:border-amber-500/30">
-              <div>
-                <p className="text-xs text-slate-800 dark:text-slate-200 font-bold">Action: {app.actionType} on {app.target}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{app.reason}</p>
+          {pendingApprovals.map((app) => {
+            const isSignIn = app.actionType === 'SIGN_IN_REQUIRED';
+            const creds = signInCredentials[app.id] || { username: '', password: '', token: '' };
+            const isPassVisible = !!showPassword[app.id];
+
+            if (isSignIn) {
+              return (
+                <div key={app.id} className="p-5 rounded-2xl bg-white dark:bg-workspace-900 border-2 border-amber-400 dark:border-amber-500/60 shadow-md space-y-4 animate-in fade-in zoom-in-95 duration-200">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-amber-200 dark:border-amber-500/30 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-sm">
+                        <KeyRound className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-extrabold text-slate-900 dark:text-white">Human Interaction Needed: Sign-in Required</h4>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-500/30 text-amber-900 dark:text-amber-200 uppercase tracking-wider animate-pulse">
+                            HITL Paused
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                          Target portal requires credentials to access protected data. You can fill in the form below to allow the agent to submit them, sign in manually in the browser, or skip.
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-workspace-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-workspace-700 truncate max-w-xs">
+                      {app.target}
+                    </span>
+                  </div>
+
+                  {/* Interactive Human Credential Form */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-slate-50 dark:bg-workspace-950 p-4 rounded-xl border border-slate-200 dark:border-workspace-800">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Username or Email</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={creds.username}
+                        onChange={(e) =>
+                          setSignInCredentials((prev) => ({
+                            ...prev,
+                            [app.id]: { ...creds, username: e.target.value }
+                          }))
+                        }
+                        placeholder="e.g. user@example.com or admin"
+                        className="w-full text-xs px-3 py-2 rounded-lg bg-white dark:bg-workspace-800 border border-slate-300 dark:border-workspace-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <Lock className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Password</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setShowPassword((prev) => ({ ...prev, [app.id]: !isPassVisible }))
+                          }
+                          className="text-[10px] text-cyan-600 hover:text-cyan-500 flex items-center gap-1 cursor-pointer"
+                        >
+                          {isPassVisible ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                          <span>{isPassVisible ? 'Hide' : 'Show'}</span>
+                        </button>
+                      </label>
+                      <input
+                        type={isPassVisible ? 'text' : 'password'}
+                        value={creds.password}
+                        onChange={(e) =>
+                          setSignInCredentials((prev) => ({
+                            ...prev,
+                            [app.id]: { ...creds, password: e.target.value }
+                          }))
+                        }
+                        placeholder="Enter account password"
+                        className="w-full text-xs px-3 py-2 rounded-lg bg-white dark:bg-workspace-800 border border-slate-300 dark:border-workspace-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Action Choices */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() =>
+                          resolveApprovalMutation.mutate({
+                            approvalId: app.id,
+                            decision: 'approve',
+                            formData: {
+                              username: creds.username || 'human_user',
+                              password: creds.password || '******',
+                              missionId: missionId!,
+                              target: app.target
+                            }
+                          })
+                        }
+                        disabled={resolveApprovalMutation.isPending}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                      >
+                        <LogIn className="w-3.5 h-3.5" />
+                        <span>Submit & Fill in Browser</span>
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          resolveApprovalMutation.mutate({
+                            approvalId: app.id,
+                            decision: 'approve'
+                          })
+                        }
+                        disabled={resolveApprovalMutation.isPending}
+                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>I Signed In Directly in Browser</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() =>
+                          resolveApprovalMutation.mutate({
+                            approvalId: app.id,
+                            decision: 'deny'
+                          })
+                        }
+                        disabled={resolveApprovalMutation.isPending}
+                        className="flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-workspace-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-all cursor-pointer"
+                      >
+                        <ArrowRight className="w-3.5 h-3.5" />
+                        <span>Skip Authentication</span>
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          resolveApprovalMutation.mutate({
+                            approvalId: app.id,
+                            decision: 'deny'
+                          })
+                        }
+                        disabled={resolveApprovalMutation.isPending}
+                        className="flex items-center gap-1 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-semibold transition-all cursor-pointer"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Deny & Abort</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div key={app.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-3.5 rounded-xl bg-white dark:bg-workspace-900/90 border border-amber-200 dark:border-amber-500/30">
+                <div>
+                  <p className="text-xs text-slate-800 dark:text-slate-200 font-bold">Action: {app.actionType} on {app.target}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{app.reason}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => resolveApprovalMutation.mutate({ approvalId: app.id, decision: 'approve' })}
+                    className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Approve Action
+                  </button>
+                  <button
+                    onClick={() => resolveApprovalMutation.mutate({ approvalId: app.id, decision: 'deny' })}
+                    className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Deny Action
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => resolveApprovalMutation.mutate({ approvalId: app.id, decision: 'approve' })}
-                  className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer"
-                >
-                  Approve Action
-                </button>
-                <button
-                  onClick={() => resolveApprovalMutation.mutate({ approvalId: app.id, decision: 'deny' })}
-                  className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-colors cursor-pointer"
-                >
-                  Deny Action
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

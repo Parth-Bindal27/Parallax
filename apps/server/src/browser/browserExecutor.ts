@@ -16,6 +16,7 @@ export interface PageSnapshotResult {
   screenshotPath?: string;
   headings: { level: number; text: string }[];
   links: { text: string; href: string }[];
+  hasLoginForm?: boolean;
 }
 
 export class BrowserExecutor {
@@ -220,6 +221,14 @@ export class BrowserExecutor {
 
         const normalizedText = this.normalizePageText(rawInnerText);
 
+        // Detect if page contains login or credential input forms
+        const hasLoginForm = await page.evaluate(() => {
+          const hasPasswordField = !!document.querySelector('input[type="password"]');
+          const hasLoginAction = !!document.querySelector('form[action*="login"], form[action*="signin"], form[action*="auth"], form[id*="login"], form[id*="signin"], form[class*="login"]');
+          const hasAuthKeywords = /sign in|log in|enter your password|authenticate to continue/i.test(document.body?.innerText || '');
+          return hasPasswordField || (hasLoginAction && hasAuthKeywords);
+        }).catch(() => false);
+
         return {
           title: title || 'Untitled Page',
           url: page.url(),
@@ -227,7 +236,8 @@ export class BrowserExecutor {
           html,
           normalizedText,
           headings,
-          links
+          links,
+          hasLoginForm
         };
       },
       { sourceId }

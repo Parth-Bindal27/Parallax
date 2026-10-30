@@ -469,7 +469,37 @@ apiRouter.post('/api/v1/approvals/:id/resolve', (req: Request, res: Response) =>
     const parsed = ResolveApprovalRequestSchema.safeParse({ approvalId: req.params.id, ...req.body });
     if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
 
-    repo.resolveApproval(req.params.id, parsed.data.decision === 'approve' ? 'approved' : 'denied');
+    const status = parsed.data.decision === 'approve' ? 'approved' : 'denied';
+    repo.resolveApproval(req.params.id, status);
+
+    // If human filled credentials or form data:
+    if (parsed.data.decision === 'approve' && parsed.data.formData) {
+      const missionId = req.body.missionId;
+      const username = parsed.data.formData.username || parsed.data.formData.email || 'human_user';
+      const actionId = uuidv4();
+      const actionLog = {
+        actionId,
+        missionId: missionId || 'active',
+        actionType: 'FILL' as const,
+        url: req.body.target || 'auth_form',
+        selector: 'input[name="username"], input[name="password"]',
+        inputValue: `Credentials submitted by Human HITL: ${username} (password: [PROTECTED])`,
+        startTime: new Date().toISOString(),
+        completionTime: new Date().toISOString(),
+        status: 'performed' as const
+      };
+      if (missionId) {
+        repo.createActionLog(actionLog);
+        missionRunner.emitMissionEvent(missionId, 'browser_action_executed', { action: actionLog, manual: true });
+        missionRunner.emitMissionEvent(missionId, 'approval_resolved', {
+          approvalId: req.params.id,
+          status,
+          decision: 'approve',
+          humanInputReceived: true
+        });
+      }
+    }
+
     res.json({ success: true, approvalId: req.params.id, status: parsed.data.decision });
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -486,6 +516,24 @@ apiRouter.post('/api/v1/missions/:id/simulate-approval', (req: Request, res: Res
       target || 'https://checkout.stripe.com/pay',
       reason || 'Autonomous agent attempted to submit payment credentials. Autonomy level INTERACTIVE_NAVIGATION blocks unapproved transactions.',
       riskLevel || 'critical'
+    );
+    missionRunner.emitMissionEvent(missionId, 'approval_requested', { approval });
+    res.json({ success: true, approval });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+apiRouter.post('/api/v1/missions/:id/simulate-signin', (req: Request, res: Response) => {
+  try {
+    const missionId = req.params.id;
+    const { targetUrl } = req.body;
+    const approval = policyEngine.createApprovalRequest(
+      missionId,
+      'SIGN_IN_REQUIRED',
+      targetUrl || 'https://app.linear.app/login',
+      'Human Interaction Needed: Target portal requires authentication. Autonomous agent stopped before credential form. Please provide your sign-in credentials or complete login manually to resume.',
+      'critical'
     );
     missionRunner.emitMissionEvent(missionId, 'approval_requested', { approval });
     res.json({ success: true, approval });

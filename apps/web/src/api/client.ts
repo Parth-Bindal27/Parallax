@@ -191,10 +191,10 @@ export const api = {
     return request<{ approvals: ApprovalRequest[] }>(`${API_BASE}/approvals?missionId=${missionId}`);
   },
 
-  async resolveApproval(approvalId: string, decision: 'approve' | 'deny', reason?: string) {
+  async resolveApproval(approvalId: string, decision: 'approve' | 'deny', reason?: string, formData?: Record<string, string>) {
     return request<{ success: boolean; approvalId: string; status: string }>(`${API_BASE}/approvals/${approvalId}/resolve`, {
       method: 'POST',
-      body: JSON.stringify({ decision, reason })
+      body: JSON.stringify({ decision, reason, formData })
     });
   },
 
@@ -202,6 +202,13 @@ export const api = {
     return request<{ success: boolean; approval: ApprovalRequest }>(`${API_BASE}/missions/${missionId}/simulate-approval`, {
       method: 'POST',
       body: JSON.stringify(details || {})
+    });
+  },
+
+  async simulateSignInRequired(missionId: string, targetUrl?: string) {
+    return request<{ success: boolean; approval: ApprovalRequest }>(`${API_BASE}/missions/${missionId}/simulate-signin`, {
+      method: 'POST',
+      body: JSON.stringify({ targetUrl })
     });
   },
 

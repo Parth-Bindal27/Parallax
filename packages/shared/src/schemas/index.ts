@@ -27,7 +27,8 @@ export const CreateMissionRequestSchema = z.object({
 export const ResolveApprovalRequestSchema = z.object({
   approvalId: z.string().uuid(),
   decision: z.enum(['approve', 'deny']),
-  reason: z.string().optional()
+  reason: z.string().optional(),
+  formData: z.record(z.string()).optional()
 });
 
 export const TriggerDriftCheckRequestSchema = z.object({

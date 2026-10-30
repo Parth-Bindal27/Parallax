@@ -17,6 +17,7 @@ import { lineageManager } from '../lineage/lineageManager.js';
 import { verificationEngine } from '../verification/verificationEngine.js';
 import { artifactGenerator } from '../artifacts/artifactGenerator.js';
 import { fixtureManager } from '../fixtures/fixtureServer.js';
+import { policyEngine } from '../policies/policyEngine.js';
 import { logger } from '../observability/logger.js';
 
 export class MissionRunner extends EventEmitter {
@@ -255,6 +256,18 @@ export class MissionRunner extends EventEmitter {
           });
 
           snapshotList.push(snapshot);
+
+          // Detect sign-in requirement and request Human Interaction (HITL)
+          if (pageResult.hasLoginForm) {
+            const approval = policyEngine.createApprovalRequest(
+              missionId,
+              'SIGN_IN_REQUIRED',
+              source.url,
+              `Human Interaction Needed: Target website (${source.domain || source.url}) requires authentication. Autonomous agent paused form filling. Please provide your sign-in credentials or authenticate manually to resume.`,
+              'critical'
+            );
+            this.emitMissionEvent(missionId, 'approval_requested', { approval });
+          }
         }
 
         return { snapshots: snapshotList };
