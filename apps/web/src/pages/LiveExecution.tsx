@@ -399,6 +399,10 @@ export function LiveExecution() {
             const isPassVisible = !!showPassword[app.id];
 
             if (isSignIn) {
+              const previewScreenshot =
+                app.screenshotPath ||
+                actions.slice().reverse().find((a) => a.screenshotPath)?.screenshotPath;
+
               return (
                 <div key={app.id} className="p-5 rounded-2xl bg-white dark:bg-workspace-900 border-2 border-amber-400 dark:border-amber-500/60 shadow-md space-y-4 animate-in fade-in zoom-in-95 duration-200">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-amber-200 dark:border-amber-500/30 pb-3">
@@ -414,13 +418,50 @@ export function LiveExecution() {
                           </span>
                         </div>
                         <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                          Target portal requires credentials to access protected data. You can fill in the form below to allow the agent to submit them, sign in manually in the browser, or skip.
+                          Target portal requires credentials to access protected data. You can inspect the live browser viewport below, fill in your credentials to let the agent log in, or authenticate manually.
                         </p>
                       </div>
                     </div>
                     <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-workspace-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-workspace-700 truncate max-w-xs">
                       {app.target}
                     </span>
+                  </div>
+
+                  {/* Live Playwright Browser Preview */}
+                  <div className="rounded-xl border border-slate-200 dark:border-workspace-750 overflow-hidden bg-slate-900 shadow-inner">
+                    <div className="px-3.5 py-2 bg-slate-800/90 text-slate-300 text-[11px] font-mono flex items-center justify-between border-b border-slate-700/80">
+                      <div className="flex items-center gap-2">
+                        <span className="flex gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+                        </span>
+                        <span className="text-slate-300 font-bold">Playwright Chromium Viewport (Paused)</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] text-cyan-300 bg-slate-950/80 px-2 py-0.5 rounded border border-slate-700">
+                        <Globe className="w-3 h-3 text-cyan-400" />
+                        <span className="truncate max-w-sm">{app.target}</span>
+                      </div>
+                    </div>
+                    <div className="relative max-h-56 overflow-hidden bg-slate-950 flex items-center justify-center">
+                      {previewScreenshot ? (
+                        <img
+                          src={previewScreenshot}
+                          alt="Active Browser Page Screenshot"
+                          className="w-full object-cover object-top opacity-95 hover:opacity-100 transition-opacity"
+                        />
+                      ) : (
+                        <div className="py-8 text-center text-xs text-slate-400 font-mono flex flex-col items-center gap-2">
+                          <Camera className="w-6 h-6 text-slate-500 animate-pulse" />
+                          <span className="font-bold text-slate-300">Live Browser Session: Authentication Boundary Encountered</span>
+                          <span className="text-[10px] text-slate-500 max-w-md">{app.target}</span>
+                        </div>
+                      )}
+                      <div className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold text-[10px] flex items-center gap-1.5 shadow-md">
+                        <Lock className="w-3 h-3" />
+                        <span>Authentication Wall Detected</span>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Interactive Human Credential Form */}

@@ -18,6 +18,7 @@ import { providerFactory } from '../providers/providerFactory.js';
 import { gtmGenerator } from '../gtm/gtmGenerator.js';
 import { multimodalEngine } from '../multimodal/multimodalEngine.js';
 import { policyEngine } from '../policies/policyEngine.js';
+import { browserExecutor } from '../browser/browserExecutor.js';
 import { verificationEngine } from '../verification/verificationEngine.js';
 import { artifactGenerator } from '../artifacts/artifactGenerator.js';
 import { logger } from '../observability/logger.js';
@@ -464,7 +465,23 @@ apiRouter.get('/api/v1/approvals', (req: Request, res: Response) => {
   }
 });
 
-apiRouter.post('/api/v1/approvals/:id/resolve', (req: Request, res: Response) => {
+apiRouter.get('/api/v1/screenshots/:filename', (req: Request, res: Response) => {
+  const filename = path.basename(req.params.filename);
+  const possiblePaths = [
+    path.resolve(process.cwd(), 'data/snapshots/screenshots', filename),
+    path.resolve(process.cwd(), '../data/snapshots/screenshots', filename),
+    path.resolve(process.cwd(), 'apps/server/data/snapshots/screenshots', filename)
+  ];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      res.setHeader('Content-Type', 'image/png');
+      return res.sendFile(p);
+    }
+  }
+  res.status(404).json({ error: 'Screenshot not found' });
+});
+
+apiRouter.post('/api/v1/approvals/:id/resolve', async (req: Request, res: Response) => {
   try {
     const parsed = ResolveApprovalRequestSchema.safeParse({ approvalId: req.params.id, ...req.body });
     if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
@@ -472,22 +489,37 @@ apiRouter.post('/api/v1/approvals/:id/resolve', (req: Request, res: Response) =>
     const status = parsed.data.decision === 'approve' ? 'approved' : 'denied';
     repo.resolveApproval(req.params.id, status);
 
-    // If human filled credentials or form data:
+    // If human filled credentials or form data, automate filling in Playwright browser session:
     if (parsed.data.decision === 'approve' && parsed.data.formData) {
       const missionId = req.body.missionId;
+      const targetUrl = req.body.target || 'https://app.linear.app/login';
       const username = parsed.data.formData.username || parsed.data.formData.email || 'human_user';
+      const password = parsed.data.formData.password;
+
+      let fillResult: any = null;
+      try {
+        fillResult = await browserExecutor.fillAndSubmitForm(missionId, targetUrl, {
+          username,
+          password
+        });
+      } catch (err) {
+        logger.warn('Automated form fill warning', { error: String(err) });
+      }
+
       const actionId = uuidv4();
       const actionLog = {
         actionId,
         missionId: missionId || 'active',
         actionType: 'FILL' as const,
-        url: req.body.target || 'auth_form',
+        url: targetUrl,
         selector: 'input[name="username"], input[name="password"]',
         inputValue: `Credentials submitted by Human HITL: ${username} (password: [PROTECTED])`,
         startTime: new Date().toISOString(),
         completionTime: new Date().toISOString(),
-        status: 'performed' as const
+        status: 'performed' as const,
+        screenshotPath: fillResult?.screenshotPath
       };
+
       if (missionId) {
         repo.createActionLog(actionLog);
         missionRunner.emitMissionEvent(missionId, 'browser_action_executed', { action: actionLog, manual: true });
@@ -495,7 +527,8 @@ apiRouter.post('/api/v1/approvals/:id/resolve', (req: Request, res: Response) =>
           approvalId: req.params.id,
           status,
           decision: 'approve',
-          humanInputReceived: true
+          humanInputReceived: true,
+          fillResult
         });
       }
     }
@@ -528,12 +561,18 @@ apiRouter.post('/api/v1/missions/:id/simulate-signin', (req: Request, res: Respo
   try {
     const missionId = req.params.id;
     const { targetUrl } = req.body;
+
+    // Find any existing screenshot for visual preview
+    const actionLogs = repo.getActionLogs(missionId);
+    const lastScreenshot = actionLogs.slice().reverse().find(a => a.screenshotPath)?.screenshotPath;
+
     const approval = policyEngine.createApprovalRequest(
       missionId,
       'SIGN_IN_REQUIRED',
       targetUrl || 'https://app.linear.app/login',
       'Human Interaction Needed: Target portal requires authentication. Autonomous agent stopped before credential form. Please provide your sign-in credentials or complete login manually to resume.',
-      'critical'
+      'critical',
+      lastScreenshot
     );
     missionRunner.emitMissionEvent(missionId, 'approval_requested', { approval });
     res.json({ success: true, approval });

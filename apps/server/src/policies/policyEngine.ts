@@ -143,7 +143,8 @@ export class PolicyEngine {
     actionType: string,
     target: string,
     reason: string,
-    riskLevel: 'low' | 'medium' | 'high' | 'critical'
+    riskLevel: 'low' | 'medium' | 'high' | 'critical',
+    screenshotPath?: string
   ): ApprovalRequest {
     const approval: ApprovalRequest = {
       id: uuidv4(),
@@ -154,7 +155,8 @@ export class PolicyEngine {
       riskLevel,
       status: 'pending',
       requestedAt: new Date().toISOString(),
-      resolvedAt: null
+      resolvedAt: null,
+      screenshotPath
     };
 
     repo.createApproval(approval);

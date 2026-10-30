@@ -184,7 +184,7 @@ export class BrowserExecutor {
    * Complete navigation and snapshot extraction of a page
    */
   async navigateAndSnapshot(missionId: string, url: string, sourceId?: string): Promise<PageSnapshotResult> {
-    const { result } = await this.executeAction(
+    const { result, event } = await this.executeAction<PageSnapshotResult>(
       missionId,
       'NAVIGATE',
       url,
@@ -241,6 +241,109 @@ export class BrowserExecutor {
         };
       },
       { sourceId }
+    );
+
+    result.screenshotPath = event.screenshotPath;
+    return result;
+  }
+
+  /**
+   * Fills credentials into the active page form and submits it
+   */
+  async fillAndSubmitForm(
+    missionId: string,
+    url: string,
+    formData: { username?: string; password?: string; token?: string }
+  ): Promise<{ success: boolean; newUrl: string; screenshotPath?: string; message: string }> {
+    const { result } = await this.executeAction(
+      missionId,
+      'FILL',
+      url,
+      async (page: Page) => {
+        logger.info(`Automating form fill on: ${url}`, { missionId });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+
+        // 1. Fill Username/Email if present
+        if (formData.username) {
+          const userSelectors = [
+            'input[type="email"]',
+            'input[name*="user" i]',
+            'input[name*="email" i]',
+            'input[name*="login" i]',
+            'input[id*="user" i]',
+            'input[id*="email" i]',
+            'input[type="text"]'
+          ];
+          for (const sel of userSelectors) {
+            const el = await page.$(sel);
+            if (el) {
+              await el.fill(formData.username);
+              logger.info(`Filled username into selector: ${sel}`);
+              break;
+            }
+          }
+        }
+
+        // 2. Fill Password if present
+        if (formData.password) {
+          const passSelectors = [
+            'input[type="password"]',
+            'input[name*="pass" i]',
+            'input[id*="pass" i]'
+          ];
+          for (const sel of passSelectors) {
+            const el = await page.$(sel);
+            if (el) {
+              await el.fill(formData.password);
+              logger.info(`Filled password into selector: ${sel}`);
+              break;
+            }
+          }
+        }
+
+        // 3. Submit Form
+        const submitSelectors = [
+          'button[type="submit"]',
+          'input[type="submit"]',
+          'button:has-text("Sign in")',
+          'button:has-text("Log in")',
+          'button:has-text("Continue")',
+          'button:has-text("Submit")'
+        ];
+        let clicked = false;
+        for (const sel of submitSelectors) {
+          const btn = await page.$(sel);
+          if (btn) {
+            await Promise.all([
+              page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 6000 }).catch(() => {}),
+              btn.click().catch(() => {})
+            ]);
+            clicked = true;
+            logger.info(`Clicked submit button selector: ${sel}`);
+            break;
+          }
+        }
+
+        await page.waitForTimeout(1000);
+
+        const screenshotsDir = path.resolve(process.cwd(), 'data/snapshots/screenshots');
+        if (!fs.existsSync(screenshotsDir)) {
+          fs.mkdirSync(screenshotsDir, { recursive: true });
+        }
+        const postAuthFilename = `shot_auth_${missionId}_${Date.now()}.png`;
+        const postAuthPath = path.join(screenshotsDir, postAuthFilename);
+        await page.screenshot({ path: postAuthPath, fullPage: false }).catch(() => {});
+
+        return {
+          success: true,
+          newUrl: page.url(),
+          screenshotPath: `/api/v1/screenshots/${postAuthFilename}`,
+          message: clicked
+            ? 'Credentials submitted and form dispatched successfully.'
+            : 'Credentials entered into form fields.'
+        };
+      },
+      { inputValue: `Credentials for ${formData.username || 'user'}` }
     );
 
     return result;

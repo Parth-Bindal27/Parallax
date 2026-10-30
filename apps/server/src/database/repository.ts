@@ -745,8 +745,8 @@ export class Repository {
     const db = getDatabase();
     const stmt = db.prepare(`
       INSERT INTO approvals (
-        id, mission_id, action_type, target, reason, risk_level, status, requested_at, resolved_at, resolved_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, mission_id, action_type, target, reason, risk_level, status, requested_at, resolved_at, resolved_by, screenshot_path
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       approval.id,
@@ -758,7 +758,8 @@ export class Repository {
       approval.status,
       approval.requestedAt,
       approval.resolvedAt ?? null,
-      approval.resolvedBy ?? null
+      approval.resolvedBy ?? null,
+      approval.screenshotPath ?? null
     );
   }
 
@@ -775,7 +776,8 @@ export class Repository {
       status: r.status as any,
       requestedAt: String(r.requested_at),
       resolvedAt: (r.resolved_at as string) ?? null,
-      resolvedBy: (r.resolved_by as string) ?? undefined
+      resolvedBy: (r.resolved_by as string) ?? undefined,
+      screenshotPath: (r.screenshot_path as string) ?? undefined
     }));
   }
 

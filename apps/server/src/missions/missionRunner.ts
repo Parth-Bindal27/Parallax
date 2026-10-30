@@ -264,7 +264,8 @@ export class MissionRunner extends EventEmitter {
               'SIGN_IN_REQUIRED',
               source.url,
               `Human Interaction Needed: Target website (${source.domain || source.url}) requires authentication. Autonomous agent paused form filling. Please provide your sign-in credentials or authenticate manually to resume.`,
-              'critical'
+              'critical',
+              pageResult.screenshotPath
             );
             this.emitMissionEvent(missionId, 'approval_requested', { approval });
           }

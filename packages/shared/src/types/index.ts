@@ -287,6 +287,7 @@ export interface ApprovalRequest {
   requestedAt: string;
   resolvedAt: string | null;
   resolvedBy?: string;
+  screenshotPath?: string;
 }
 
 export interface SourceDriftReport {

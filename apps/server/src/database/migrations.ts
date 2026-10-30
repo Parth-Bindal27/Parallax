@@ -44,4 +44,11 @@ export function runMigrations(customDbPath?: string): void {
   } else {
     logger.debug(`Migration ${initialMigrationName} already applied`);
   }
+
+  // Safe progressive migration for screenshot_path column
+  try {
+    db.exec('ALTER TABLE approvals ADD COLUMN screenshot_path TEXT;');
+  } catch {
+    // Column already exists
+  }
 }
