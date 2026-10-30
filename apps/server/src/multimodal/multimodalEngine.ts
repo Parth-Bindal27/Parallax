@@ -415,10 +415,16 @@ export class MultimodalEngine {
    */
   async runAdaLEvaluation(missionId: string): Promise<AdaLAuditExecution> {
     return new Promise((resolve) => {
-      const scriptPath = path.resolve(process.cwd(), 'adal_mission_evaluator.py');
+      let scriptPath = path.resolve(process.cwd(), 'adal_mission_evaluator.py');
+      if (!fs.existsSync(scriptPath)) {
+        scriptPath = path.resolve(process.cwd(), '../adal_mission_evaluator.py');
+      }
+      if (!fs.existsSync(scriptPath)) {
+        scriptPath = path.resolve(process.cwd(), '../../adal_mission_evaluator.py');
+      }
       
       const py = spawn('python', [scriptPath], {
-        cwd: process.cwd(),
+        cwd: path.dirname(scriptPath),
         env: { ...process.env, PYTHONUNBUFFERED: '1' }
       });
 
