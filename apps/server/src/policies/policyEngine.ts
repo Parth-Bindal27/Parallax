@@ -15,7 +15,7 @@ export class PolicyEngine {
 
   constructor(config?: Partial<SecurityPolicyConfig>) {
     this.config = {
-      allowLocalFixtures: process.env.ALLOW_LOCAL_FIXTURES === 'true',
+      allowLocalFixtures: process.env.ALLOW_LOCAL_FIXTURES !== 'false',
       ssrfProtectionEnabled: process.env.SSRF_PROTECTION_ENABLED !== 'false',
       serverPort: Number(process.env.PORT || 3001),
       ...config

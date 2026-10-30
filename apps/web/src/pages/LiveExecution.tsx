@@ -58,6 +58,14 @@ export function LiveExecution() {
     refetchInterval: 3000
   });
 
+  // Fetch Sources (All Consulted Target Websites)
+  const { data: sourcesData } = useQuery({
+    queryKey: ['sources', missionId],
+    queryFn: () => (missionId ? api.getSources(missionId) : null),
+    enabled: !!missionId,
+    refetchInterval: 3000
+  });
+
   // Fetch Claims
   const { data: claimsData, refetch: refetchClaims } = useQuery({
     queryKey: ['claims', missionId],
@@ -204,6 +212,7 @@ export function LiveExecution() {
   const mission = missionData?.mission;
   const nodes = missionData?.nodes || [];
   const actions = actionsData?.actions || [];
+  const sources = sourcesData?.sources || [];
   const claims = claimsData?.claims || [];
   const evidence = evidenceData?.evidence || [];
   const approvals = approvalsData?.approvals || [];
@@ -580,9 +589,72 @@ export function LiveExecution() {
             </span>
           </div>
 
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-workspace-900 border border-slate-200 dark:border-workspace-700 text-xs font-mono flex items-center gap-2 text-slate-700 dark:text-slate-300">
-            <span className="text-slate-400">URL:</span>
-            <span className="truncate text-cyan-700 dark:text-cyan-300 font-semibold">{latestAction?.url || 'Awaiting initial navigation...'}</span>
+          {/* Active Navigation URL */}
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-workspace-900 border border-slate-200 dark:border-workspace-700 text-xs font-mono flex items-center justify-between gap-2 text-slate-700 dark:text-slate-300">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-slate-400 shrink-0 font-bold">ACTIVE:</span>
+              <span className="truncate text-cyan-700 dark:text-cyan-300 font-semibold">{latestAction?.url || sources[0]?.url || 'Awaiting initial navigation...'}</span>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 shrink-0">
+              {latestAction?.status || 'Active'}
+            </span>
+          </div>
+
+          {/* All Visited Resources & Targets Deck */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
+              <span className="flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5 text-cyan-600 dark:text-brand-cyan" />
+                <span>All Consulted Websites & Resources ({sources.length > 0 ? sources.length : mission?.spec.researchTargets?.length || 1})</span>
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">Multi-Source Lineage</span>
+            </div>
+
+            <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto pr-1">
+              {sources.length > 0 ? (
+                sources.map((src) => {
+                  const isCurrent = (latestAction?.url || '').includes(src.domain) || latestAction?.url === src.url;
+                  return (
+                    <div
+                      key={src.id}
+                      className={`p-2.5 rounded-xl border text-xs font-mono transition-all flex items-center justify-between gap-3 flex-1 min-w-[240px] shadow-2xs ${
+                        isCurrent
+                          ? 'bg-cyan-50 dark:bg-workspace-800 border-cyan-400 ring-1 ring-cyan-400/30 text-cyan-950 dark:text-cyan-200'
+                          : 'bg-slate-50 dark:bg-workspace-850 border-slate-200 dark:border-workspace-700 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${src.isAccessible ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                          <span className="font-bold truncate text-[11px] text-slate-900 dark:text-white">{src.title || src.domain}</span>
+                        </div>
+                        <a
+                          href={src.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] text-slate-400 hover:text-cyan-600 hover:underline truncate block mt-0.5"
+                          title={src.url}
+                        >
+                          {src.url}
+                        </a>
+                      </div>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase shrink-0 ${
+                        isCurrent ? 'bg-cyan-200 dark:bg-cyan-900 text-cyan-800 dark:text-cyan-200' : 'bg-slate-200 dark:bg-workspace-750 text-slate-600 dark:text-slate-400'
+                      }`}>
+                        {isCurrent ? 'NAVIGATING' : 'VISITED'}
+                      </span>
+                    </div>
+                  );
+                })
+              ) : (
+                (mission?.spec.researchTargets || []).map((t, idx) => (
+                  <div key={idx} className="p-2.5 rounded-xl bg-slate-50 dark:bg-workspace-850 border border-slate-200 dark:border-workspace-700 text-xs font-mono flex items-center justify-between flex-1 min-w-[200px]">
+                    <span className="truncate">{t}</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-workspace-750 text-slate-500">QUEUED</span>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
 
           {/* Browser Viewport Visualizer */}
