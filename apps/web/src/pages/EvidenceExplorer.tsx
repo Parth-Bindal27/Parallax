@@ -6,7 +6,9 @@ import {
   Search,
   Filter,
   ExternalLink,
-  Quote
+  Quote,
+  RotateCw,
+  Image as ImageIcon
 } from 'lucide-react';
 import { api } from '../api/client.js';
 import type { EvidenceRecord } from '@parallax/shared';
@@ -16,9 +18,10 @@ export function EvidenceExplorer() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PASS' | 'UNCERTAIN' | 'FAIL'>('ALL');
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'dom_quote' | 'screenshot_ocr'>('ALL');
   const [selectedEvidence, setSelectedEvidence] = useState<EvidenceRecord | null>(null);
 
-  const { data: evidenceData, isLoading } = useQuery({
+  const { data: evidenceData, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['evidence', missionId],
     queryFn: () => (missionId ? api.getEvidence(missionId) : null),
     enabled: !!missionId
@@ -41,7 +44,8 @@ export function EvidenceExplorer() {
       ev.url.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesStatus = statusFilter === 'ALL' || ev.validationStatus === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesType = typeFilter === 'ALL' || ev.evidenceType === typeFilter;
+    return matchesSearch && matchesStatus && matchesType;
   });
 
   return (
@@ -54,11 +58,19 @@ export function EvidenceExplorer() {
             <span>Evidence Ledger Explorer</span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Audit-grade quotation ledger anchoring every factual claim to verified snapshot DOM locations and SHA-256 hashes.
+            Audit-grade quotation and visual evidence ledger anchoring every factual claim to verified snapshot DOM locations and SHA-256 hashes.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white dark:bg-workspace-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-workspace-700 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-workspace-750 transition-colors shadow-xs cursor-pointer"
+          >
+            <RotateCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin text-cyan-600' : 'text-slate-400'}`} />
+            <span>{isFetching ? 'Refreshing...' : 'Refresh Ledger'}</span>
+          </button>
           <span className="text-xs font-mono text-slate-500 dark:text-slate-400 bg-white dark:bg-workspace-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-workspace-700 shadow-xs">
             {filtered.length} of {evidenceList.length} records shown
           </span>
@@ -66,7 +78,7 @@ export function EvidenceExplorer() {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="rounded-2xl bg-white dark:bg-workspace-900 p-4 border border-slate-200/90 dark:border-workspace-700/70 shadow-sm flex flex-col sm:flex-row items-center gap-4">
+      <div className="rounded-2xl bg-white dark:bg-workspace-900 p-4 border border-slate-200/90 dark:border-workspace-700/70 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -78,22 +90,47 @@ export function EvidenceExplorer() {
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Filter className="w-4 h-4 text-slate-400" />
-          <span className="text-xs text-slate-500 dark:text-slate-400">Status:</span>
-          {(['ALL', 'PASS', 'UNCERTAIN', 'FAIL'] as const).map((status) => (
-            <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                statusFilter === status
-                  ? 'bg-cyan-600 text-white shadow-xs'
-                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-workspace-850 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-              }`}
-            >
-              {status}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          {/* Type Filter */}
+          <div className="flex items-center gap-1.5 pr-2 border-r border-slate-200 dark:border-workspace-750">
+            <span className="text-xs text-slate-400">Type:</span>
+            {[
+              { id: 'ALL', label: 'All' },
+              { id: 'dom_quote', label: 'DOM Quotes' },
+              { id: 'screenshot_ocr', label: 'Vision Uploads' }
+            ].map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTypeFilter(t.id as any)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  typeFilter === t.id
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-workspace-850 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Status Filter */}
+          <div className="flex items-center gap-1.5">
+            <Filter className="w-3.5 h-3.5 text-slate-400" />
+            <span className="text-xs text-slate-400">Status:</span>
+            {(['ALL', 'PASS', 'UNCERTAIN', 'FAIL'] as const).map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                  statusFilter === status
+                    ? 'bg-cyan-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-workspace-850 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -125,8 +162,17 @@ export function EvidenceExplorer() {
                 {/* Header: Title and Status */}
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <Quote className="w-4 h-4 text-cyan-600 dark:text-brand-cyan flex-shrink-0" />
-                    <span className="text-xs font-bold text-slate-900 dark:text-white truncate max-w-xs">{ev.pageTitle}</span>
+                    {ev.evidenceType === 'screenshot_ocr' ? (
+                      <ImageIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+                    ) : (
+                      <Quote className="w-4 h-4 text-cyan-600 dark:text-brand-cyan flex-shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <span className="text-xs font-bold text-slate-900 dark:text-white truncate block max-w-xs">{ev.pageTitle}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {ev.evidenceType === 'screenshot_ocr' ? 'Visual Intake Evidence' : 'DOM Quoted Evidence'}
+                      </span>
+                    </div>
                   </div>
                   <span
                     className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase font-mono ${
@@ -140,6 +186,17 @@ export function EvidenceExplorer() {
                     {ev.validationStatus}
                   </span>
                 </div>
+
+                {/* If visual evidence, render live image preview */}
+                {ev.evidenceType === 'screenshot_ocr' && ev.url.includes('/artifacts/') && (
+                  <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-workspace-800 bg-slate-950 max-h-36 flex items-center justify-center">
+                    <img
+                      src={ev.url}
+                      alt={ev.pageTitle}
+                      className="max-h-36 w-full object-contain"
+                    />
+                  </div>
+                )}
 
                 {/* Exact Quotation Block */}
                 <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-workspace-950/80 border border-slate-200 dark:border-workspace-800 text-xs text-slate-800 dark:text-slate-200 font-mono leading-relaxed">
