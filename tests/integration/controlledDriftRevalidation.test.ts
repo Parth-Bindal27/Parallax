@@ -1,21 +1,27 @@
 process.env.ALLOW_LOCAL_FIXTURES = 'true';
 process.env.PORT = '3001';
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { runMigrations } from '../../apps/server/src/database/migrations.js';
 import { intentCompiler } from '../../apps/server/src/missions/intentCompiler.js';
 import { missionRunner } from '../../apps/server/src/missions/missionRunner.js';
 import { driftDetector } from '../../apps/server/src/drift/driftDetector.js';
 import { repo } from '../../apps/server/src/database/repository.js';
 import { fixtureManager } from '../../apps/server/src/fixtures/fixtureServer.js';
+import { ensureTestServer, closeTestServer } from '../setup/testServer.js';
 
 describe('Integration - Controlled Source Drift & Selective Revalidation (Stages A-G)', () => {
   beforeAll(async () => {
+    await ensureTestServer();
     runMigrations();
     try {
       await fetch('http://localhost:3001/api/v1/fixtures/reset', { method: 'POST' });
     } catch {}
     fixtureManager.resetToBaseline();
+  });
+
+  afterAll(async () => {
+    await closeTestServer();
   });
 
   it('executes full signature drift scenario: baseline -> mutate -> detect -> impact -> revalidate -> regression', async () => {
@@ -45,6 +51,7 @@ describe('Integration - Controlled Source Drift & Selective Revalidation (Stages
         body: JSON.stringify({ mutationType: 'price_increase' })
       });
     } catch {}
+    fixtureManager.resetToBaseline();
     const mutation = fixtureManager.mutateFixture('price_increase');
     expect(mutation.oldPrice).toBe(499);
     expect(mutation.newPrice).toBe(699);

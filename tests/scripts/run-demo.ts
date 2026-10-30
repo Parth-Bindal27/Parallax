@@ -8,6 +8,7 @@ import { driftDetector } from '../../apps/server/src/drift/driftDetector.js';
 import { repo } from '../../apps/server/src/database/repository.js';
 import { fixtureManager } from '../../apps/server/src/fixtures/fixtureServer.js';
 import { browserExecutor } from '../../apps/server/src/browser/browserExecutor.js';
+import { ensureTestServer, closeTestServer } from '../setup/testServer.js';
 
 async function runSignatureDemonstration() {
   console.log('\n================================================================');
@@ -15,6 +16,7 @@ async function runSignatureDemonstration() {
   console.log('================================================================\n');
 
   // Step 0: Initialize
+  await ensureTestServer();
   runMigrations();
   try {
     await fetch('http://localhost:3001/api/v1/fixtures/reset', { method: 'POST' });
@@ -98,6 +100,7 @@ async function runSignatureDemonstration() {
   console.log('================================================================\n');
 
   await browserExecutor.close();
+  await closeTestServer();
   process.exit(0);
 }
 

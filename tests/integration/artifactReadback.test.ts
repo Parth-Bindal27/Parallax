@@ -1,18 +1,24 @@
 process.env.ALLOW_LOCAL_FIXTURES = 'true';
 process.env.PORT = '3001';
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import { runMigrations } from '../../apps/server/src/database/migrations.js';
 import { intentCompiler } from '../../apps/server/src/missions/intentCompiler.js';
 import { missionRunner } from '../../apps/server/src/missions/missionRunner.js';
 import { repo } from '../../apps/server/src/database/repository.js';
 import { fixtureManager } from '../../apps/server/src/fixtures/fixtureServer.js';
+import { ensureTestServer, closeTestServer } from '../setup/testServer.js';
 
 describe('Integration - Artifact Generation & Disk Readback Validation', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
+    await ensureTestServer();
     runMigrations();
     fixtureManager.resetToBaseline();
+  });
+
+  afterAll(async () => {
+    await closeTestServer();
   });
 
   it('generates files on disk that pass strict readback schema validation', async () => {

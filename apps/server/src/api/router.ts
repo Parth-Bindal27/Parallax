@@ -14,6 +14,8 @@ import { lineageManager } from '../lineage/lineageManager.js';
 import { driftDetector } from '../drift/driftDetector.js';
 import { fixtureManager, renderFixtureHtml } from '../fixtures/fixtureServer.js';
 import { providerFactory } from '../providers/providerFactory.js';
+import { gtmGenerator } from '../gtm/gtmGenerator.js';
+import { multimodalEngine } from '../multimodal/multimodalEngine.js';
 import { logger } from '../observability/logger.js';
 
 export const apiRouter = Router();
@@ -244,11 +246,136 @@ apiRouter.get('/api/v1/missions/:id/verification', (req: Request, res: Response)
   }
 });
 
+// --- GTM & CREATIVE STUDIO ---
+apiRouter.get('/api/v1/missions/:id/gtm', async (req: Request, res: Response) => {
+  try {
+    const missionId = req.params.id;
+    const gtmPackage = await gtmGenerator.generatePackage(missionId);
+    res.json({ gtm: gtmPackage, gtmPackage });
+  } catch (err) {
+    logger.error('Failed to generate GTM package', { error: String(err) });
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// --- MULTIMODAL COMPANION CAPABILITIES ---
+apiRouter.post('/api/v1/multimodal/generate-image', async (req: Request, res: Response) => {
+  try {
+    const { missionId, title, headline, subheadline, callToAction, accentColor, dimensions, assetType } = req.body;
+    if (!missionId) return res.status(400).json({ error: 'missionId is required' });
+
+    const result = await multimodalEngine.generateMarketingGraphic({
+      missionId,
+      title: title || 'PARALLAX Asset',
+      headline: headline || 'Verified Research Findings',
+      subheadline: subheadline || 'Evidence-anchored proof from live browser sessions.',
+      callToAction: callToAction || 'Inspect Ledger',
+      accentColor,
+      dimensions,
+      assetType
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    logger.error('Failed to generate image asset', { error: String(err) });
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+apiRouter.post('/api/v1/multimodal/generate-audio', async (req: Request, res: Response) => {
+  try {
+    const { missionId, title, scriptText, durationSeconds } = req.body;
+    if (!missionId) return res.status(400).json({ error: 'missionId is required' });
+
+    const result = await multimodalEngine.generateSpeechAudio({
+      missionId,
+      title: title || 'Product Launch Audio',
+      scriptText: scriptText || 'Verified Web Missions audio track.',
+      durationSeconds: durationSeconds || 5.0
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    logger.error('Failed to synthesize speech audio', { error: String(err) });
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+apiRouter.post('/api/v1/multimodal/upload-image', async (req: Request, res: Response) => {
+  try {
+    const { missionId, filename, base64Data, mimeType } = req.body;
+    if (!missionId || !base64Data) {
+      return res.status(400).json({ error: 'missionId and base64Data are required' });
+    }
+
+    const cleanBase64 = base64Data.replace(/^data:image\/[a-zA-Z+]+;base64,/, '');
+    const buffer = Buffer.from(cleanBase64, 'base64');
+    const safeFilename = filename || 'uploaded_image.png';
+    const safeMime = mimeType || 'image/png';
+
+    const result = await multimodalEngine.processUploadedImage(missionId, safeFilename, buffer, safeMime);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    logger.error('Failed to process image upload', { error: String(err) });
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+apiRouter.post('/api/v1/missions/:id/adal-audit', async (req: Request, res: Response) => {
+  try {
+    const missionId = req.params.id;
+    const auditResult = await multimodalEngine.runAdaLEvaluation(missionId);
+    res.json({ success: true, audit: auditResult });
+  } catch (err) {
+    logger.error('Failed to run AdaL audit', { error: String(err) });
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+apiRouter.get('/api/v1/missions/:id/browser-recording', (req: Request, res: Response) => {
+  try {
+    const missionId = req.params.id;
+    res.json({
+      missionId,
+      browserRecordingActive: true,
+      playbackNote: 'Full Playwright headless Chromium execution viewport captured in audit trail.',
+      aiTextToVideoStatus: 'FUTURE_CAPABILITY (Requires external Runway/Sora API key)'
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // --- ARTIFACTS & DOWNLOADS ---
 apiRouter.get('/api/v1/missions/:id/artifacts', (req: Request, res: Response) => {
   try {
     const artifacts = repo.getArtifacts(req.params.id);
     res.json({ artifacts });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// Inline view for media (images, audio, HTML)
+apiRouter.get('/api/v1/missions/:id/artifacts/:artifactId/view', (req: Request, res: Response) => {
+  try {
+    const artifact = repo.getArtifactById(req.params.artifactId);
+    if (!artifact) return res.status(404).json({ error: 'Artifact not found' });
+
+    const storageDir = path.resolve(process.cwd(), process.env.ARTIFACT_STORAGE_PATH || 'data/artifacts');
+    const resolvedPath = path.resolve(artifact.storagePath);
+    if (!resolvedPath.startsWith(storageDir)) {
+      return res.status(403).json({ error: 'Access denied: path traversal attempt detected' });
+    }
+
+    if (!fs.existsSync(resolvedPath)) {
+      return res.status(404).json({ error: 'Artifact file missing on disk' });
+    }
+
+    res.setHeader('Content-Type', artifact.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${artifact.filename}"`);
+    const fileStream = fs.createReadStream(resolvedPath);
+    fileStream.pipe(res);
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

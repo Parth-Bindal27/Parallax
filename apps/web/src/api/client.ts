@@ -12,7 +12,11 @@ import type {
   ApprovalRequest,
   SourceDriftReport,
   LineageGraphData,
-  AutonomyPolicyLevel
+  AutonomyPolicyLevel,
+  GTMCampaignPackage,
+  VisionAsset,
+  AdaLAuditExecution,
+  VideoCapabilityStatus
 } from '@parallax/shared';
 
 const API_BASE = '/api/v1';
@@ -182,5 +186,67 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ decision, reason })
     });
+  },
+
+  // Multimodal GTM & Creative Studio (Track Pillar 2)
+  async getGTMPackage(missionId: string) {
+    return request<{ gtm: GTMCampaignPackage }>(`${API_BASE}/missions/${missionId}/gtm`);
+  },
+
+  async generateImage(data: {
+    missionId: string;
+    title: string;
+    headline: string;
+    subheadline: string;
+    callToAction: string;
+    accentColor?: string;
+    dimensions?: string;
+    assetType?: string;
+  }) {
+    return request<{ success: boolean; artifact: Artifact; assetSpec: any }>(`${API_BASE}/multimodal/generate-image`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  },
+
+  async generateAudio(data: {
+    missionId: string;
+    title: string;
+    scriptText: string;
+    durationSeconds?: number;
+  }) {
+    return request<{ success: boolean; artifact: Artifact; audioUrl: string; fileSize: number; hash: string }>(
+      `${API_BASE}/multimodal/generate-audio`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data)
+      }
+    );
+  },
+
+  async uploadImage(data: {
+    missionId: string;
+    filename: string;
+    base64Data: string;
+    mimeType: string;
+  }) {
+    return request<{ success: boolean; visionAsset: VisionAsset; artifact: Artifact }>(
+      `${API_BASE}/multimodal/upload-image`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data)
+      }
+    );
+  },
+
+  async runAdaLAudit(missionId: string) {
+    return request<{ success: boolean; audit: AdaLAuditExecution }>(`${API_BASE}/missions/${missionId}/adal-audit`, {
+      method: 'POST'
+    });
+  },
+
+  async getBrowserRecordingStatus(missionId: string) {
+    return request<VideoCapabilityStatus>(`${API_BASE}/missions/${missionId}/browser-recording`);
   }
 };
+

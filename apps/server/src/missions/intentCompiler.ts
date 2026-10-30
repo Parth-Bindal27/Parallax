@@ -33,6 +33,12 @@ export class IntentCompiler {
       'You are the PARALLAX Intent Compiler. Deconstruct the user research prompt into a strict, verifiable mission specification.'
     );
 
+    // Auto-detect URLs from prompt if present
+    const extractedPromptUrls = input.prompt.match(/https?:\/\/[^\s"'<>]+/gi) || [];
+    if (extractedPromptUrls.length > 0) {
+      spec.researchTargets = Array.from(new Set([...extractedPromptUrls, ...(spec.researchTargets || [])]));
+    }
+
     // If custom target URLs were explicitly provided, use them
     if (input.targetUrls && input.targetUrls.length > 0) {
       spec.researchTargets = input.targetUrls;

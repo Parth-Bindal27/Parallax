@@ -164,26 +164,53 @@ export class MissionRunner extends EventEmitter {
         const port = process.env.PORT || 3001;
         const fixtureUrl = `http://localhost:${port}/fixtures/student-ai-tools`;
         const targets = mission.spec.researchTargets || [];
-
         const sourceList: Source[] = [];
-        const sourceId = uuidv4();
         const now = new Date().toISOString();
 
-        const catalogSource: Source = {
-          id: sourceId,
-          missionId,
-          url: fixtureUrl,
-          canonicalUrl: fixtureUrl,
-          domain: `localhost:${port}`,
-          title: 'Student AI Tools Directory — Official Comparison Portal',
-          isPermitted: true,
-          isAccessible: true,
-          firstDiscoveredAt: now,
-          lastCheckedAt: now
-        };
+        // Extract any valid HTTP / HTTPS target URLs from researchTargets
+        const liveUrls = targets.filter(t => t.startsWith('http://') || t.startsWith('https://'));
 
-        repo.createSource(catalogSource);
-        sourceList.push(catalogSource);
+        if (liveUrls.length > 0) {
+          for (const targetUrl of liveUrls) {
+            try {
+              const parsed = new URL(targetUrl);
+              const source: Source = {
+                id: uuidv4(),
+                missionId,
+                url: targetUrl,
+                canonicalUrl: targetUrl,
+                domain: parsed.hostname,
+                title: `${parsed.hostname} Live Research Target`,
+                isPermitted: true,
+                isAccessible: true,
+                firstDiscoveredAt: now,
+                lastCheckedAt: now
+              };
+              repo.createSource(source);
+              sourceList.push(source);
+            } catch (e) {
+              logger.warn(`Invalid URL target: ${targetUrl}`, { error: String(e) });
+            }
+          }
+        }
+
+        // If no external URLs found, use the official deterministic student AI tools benchmark fixture
+        if (sourceList.length === 0) {
+          const catalogSource: Source = {
+            id: uuidv4(),
+            missionId,
+            url: fixtureUrl,
+            canonicalUrl: fixtureUrl,
+            domain: `localhost:${port}`,
+            title: 'Student AI Tools Directory — Official Comparison Portal',
+            isPermitted: true,
+            isAccessible: true,
+            firstDiscoveredAt: now,
+            lastCheckedAt: now
+          };
+          repo.createSource(catalogSource);
+          sourceList.push(catalogSource);
+        }
 
         return { discoveredSources: sourceList };
       }
@@ -235,157 +262,324 @@ export class MissionRunner extends EventEmitter {
 
       case 'EXTRACT_CLAIMS': {
         const sources = repo.getSources(missionId);
-        const catalogSource = sources[0];
-        const snapshot = repo.getLatestSnapshotForSource(catalogSource.id);
-        if (!snapshot) throw new Error('No snapshot found for claim extraction');
+        if (sources.length === 0) throw new Error('No sources found for claim extraction');
 
-        const fixtureTools = fixtureManager.getTools();
         const createdClaims: Claim[] = [];
         const createdEvidence: EvidenceRecord[] = [];
+        const isFixtureMission = sources.some(s => s.url.includes('/fixtures/student-ai-tools'));
 
-        for (const tool of fixtureTools) {
-          const now = new Date().toISOString();
+        if (isFixtureMission) {
+          const catalogSource = sources.find(s => s.url.includes('/fixtures/student-ai-tools')) || sources[0];
+          const snapshot = repo.getLatestSnapshotForSource(catalogSource.id);
+          if (!snapshot) throw new Error('No snapshot found for claim extraction');
 
-          // 1. Monthly Price Claim
-          const priceExcerpt = `₹${tool.monthlyPrice} / month`;
-          const priceEvidence = evidenceLedger.createEvidenceRecord({
-            missionId,
-            sourceId: catalogSource.id,
-            snapshotId: snapshot.id,
-            url: catalogSource.url,
-            pageTitle: snapshot.title,
-            exactExcerpt: priceExcerpt,
-            fullText: snapshot.normalizedText,
-            selector: `#${tool.name.toLowerCase().replace(/\s+/g, '')} .price-tag`
-          });
-          createdEvidence.push(priceEvidence);
+          const fixtureTools = fixtureManager.getTools();
 
-          const priceClaimId = uuidv4();
-          const priceClaim: Claim = {
-            id: priceClaimId,
-            missionId,
-            subject: tool.name,
-            predicate: 'monthlyPrice',
-            value: tool.monthlyPrice,
-            dataType: 'currency',
-            unitOrCurrency: 'INR',
-            billingPeriod: 'monthly',
-            supportingEvidenceIds: [priceEvidence.id],
-            contradictoryEvidenceIds: [],
-            confidence: 1.0,
-            verificationStatus: 'verified',
-            extractedAt: now,
-            lastVerifiedAt: now,
-            notes: `Extracted from pricing tag quotation`
-          };
-          createdClaims.push(priceClaim);
+          for (const tool of fixtureTools) {
+            const now = new Date().toISOString();
 
-          // 2. Free Plan Claim
-          const freeExcerpt = tool.freePlanAvailable ? 'Free Plan Available' : 'Paid Only';
-          const freeEvidence = evidenceLedger.createEvidenceRecord({
-            missionId,
-            sourceId: catalogSource.id,
-            snapshotId: snapshot.id,
-            url: catalogSource.url,
-            pageTitle: snapshot.title,
-            exactExcerpt: freeExcerpt,
-            fullText: snapshot.normalizedText,
-            selector: `#${tool.name.toLowerCase().replace(/\s+/g, '')} .badge-free`
-          });
-          createdEvidence.push(freeEvidence);
+            // 1. Monthly Price Claim
+            const priceExcerpt = `₹${tool.monthlyPrice} / month`;
+            const priceEvidence = evidenceLedger.createEvidenceRecord({
+              missionId,
+              sourceId: catalogSource.id,
+              snapshotId: snapshot.id,
+              url: catalogSource.url,
+              pageTitle: snapshot.title,
+              exactExcerpt: priceExcerpt,
+              fullText: snapshot.normalizedText,
+              selector: `#${tool.name.toLowerCase().replace(/\s+/g, '')} .price-tag`
+            });
+            createdEvidence.push(priceEvidence);
 
-          const freeClaimId = uuidv4();
-          const freeClaim: Claim = {
-            id: freeClaimId,
-            missionId,
-            subject: tool.name,
-            predicate: 'freePlanAvailable',
-            value: tool.freePlanAvailable,
-            dataType: 'boolean',
-            unitOrCurrency: null,
-            billingPeriod: null,
-            supportingEvidenceIds: [freeEvidence.id],
-            contradictoryEvidenceIds: [],
-            confidence: 1.0,
-            verificationStatus: 'verified',
-            extractedAt: now,
-            lastVerifiedAt: now,
-            notes: 'Extracted from plan tier badge'
-          };
-          createdClaims.push(freeClaim);
+            const priceClaimId = uuidv4();
+            const priceClaim: Claim = {
+              id: priceClaimId,
+              missionId,
+              subject: tool.name,
+              predicate: 'monthlyPrice',
+              value: tool.monthlyPrice,
+              dataType: 'currency',
+              unitOrCurrency: 'INR',
+              billingPeriod: 'monthly',
+              supportingEvidenceIds: [priceEvidence.id],
+              contradictoryEvidenceIds: [],
+              confidence: 1.0,
+              verificationStatus: 'verified',
+              extractedAt: now,
+              lastVerifiedAt: now,
+              notes: `Extracted from pricing tag quotation`
+            };
+            createdClaims.push(priceClaim);
 
-          // 3. Key Features Claim
-          const featuresExcerpt = `Key Features: ${tool.keyFeatures}`;
-          const featuresEvidence = evidenceLedger.createEvidenceRecord({
-            missionId,
-            sourceId: catalogSource.id,
-            snapshotId: snapshot.id,
-            url: catalogSource.url,
-            pageTitle: snapshot.title,
-            exactExcerpt: featuresExcerpt,
-            fullText: snapshot.normalizedText
-          });
-          createdEvidence.push(featuresEvidence);
+            // 2. Free Plan Claim
+            const freeExcerpt = tool.freePlanAvailable ? 'Free Plan Available' : 'Paid Only';
+            const freeEvidence = evidenceLedger.createEvidenceRecord({
+              missionId,
+              sourceId: catalogSource.id,
+              snapshotId: snapshot.id,
+              url: catalogSource.url,
+              pageTitle: snapshot.title,
+              exactExcerpt: freeExcerpt,
+              fullText: snapshot.normalizedText,
+              selector: `#${tool.name.toLowerCase().replace(/\s+/g, '')} .badge-free`
+            });
+            createdEvidence.push(freeEvidence);
 
-          const featuresClaimId = uuidv4();
-          const featuresClaim: Claim = {
-            id: featuresClaimId,
-            missionId,
-            subject: tool.name,
-            predicate: 'keyFeatures',
-            value: tool.keyFeatures,
-            dataType: 'string',
-            unitOrCurrency: null,
-            billingPeriod: null,
-            supportingEvidenceIds: [featuresEvidence.id],
-            contradictoryEvidenceIds: [],
-            confidence: 1.0,
-            verificationStatus: 'verified',
-            extractedAt: now,
-            lastVerifiedAt: now,
-            notes: 'Extracted from key features block'
-          };
-          createdClaims.push(featuresClaim);
+            const freeClaimId = uuidv4();
+            const freeClaim: Claim = {
+              id: freeClaimId,
+              missionId,
+              subject: tool.name,
+              predicate: 'freePlanAvailable',
+              value: tool.freePlanAvailable,
+              dataType: 'boolean',
+              unitOrCurrency: null,
+              billingPeriod: null,
+              supportingEvidenceIds: [freeEvidence.id],
+              contradictoryEvidenceIds: [],
+              confidence: 1.0,
+              verificationStatus: 'verified',
+              extractedAt: now,
+              lastVerifiedAt: now,
+              notes: 'Extracted from plan tier badge'
+            };
+            createdClaims.push(freeClaim);
 
-          // 4. Official URL Claim
-          const urlExcerpt = `Official URL: ${tool.officialUrl}`;
-          const urlEvidence = evidenceLedger.createEvidenceRecord({
-            missionId,
-            sourceId: catalogSource.id,
-            snapshotId: snapshot.id,
-            url: catalogSource.url,
-            pageTitle: snapshot.title,
-            exactExcerpt: urlExcerpt,
-            fullText: snapshot.normalizedText
-          });
-          createdEvidence.push(urlEvidence);
+            // 3. Key Features Claim
+            const featuresExcerpt = `Key Features: ${tool.keyFeatures}`;
+            const featuresEvidence = evidenceLedger.createEvidenceRecord({
+              missionId,
+              sourceId: catalogSource.id,
+              snapshotId: snapshot.id,
+              url: catalogSource.url,
+              pageTitle: snapshot.title,
+              exactExcerpt: featuresExcerpt,
+              fullText: snapshot.normalizedText
+            });
+            createdEvidence.push(featuresEvidence);
 
-          const urlClaimId = uuidv4();
-          const urlClaim: Claim = {
-            id: urlClaimId,
-            missionId,
-            subject: tool.name,
-            predicate: 'officialUrl',
-            value: tool.officialUrl,
-            dataType: 'url',
-            unitOrCurrency: null,
-            billingPeriod: null,
-            supportingEvidenceIds: [urlEvidence.id],
-            contradictoryEvidenceIds: [],
-            confidence: 1.0,
-            verificationStatus: 'verified',
-            extractedAt: now,
-            lastVerifiedAt: now,
-            notes: 'Canonical official link'
-          };
-          createdClaims.push(urlClaim);
+            const featuresClaimId = uuidv4();
+            const featuresClaim: Claim = {
+              id: featuresClaimId,
+              missionId,
+              subject: tool.name,
+              predicate: 'keyFeatures',
+              value: tool.keyFeatures,
+              dataType: 'string',
+              unitOrCurrency: null,
+              billingPeriod: null,
+              supportingEvidenceIds: [featuresEvidence.id],
+              contradictoryEvidenceIds: [],
+              confidence: 1.0,
+              verificationStatus: 'verified',
+              extractedAt: now,
+              lastVerifiedAt: now,
+              notes: 'Extracted from key features block'
+            };
+            createdClaims.push(featuresClaim);
+
+            // 4. Official URL Claim
+            const urlExcerpt = `Official URL: ${tool.officialUrl}`;
+            const urlEvidence = evidenceLedger.createEvidenceRecord({
+              missionId,
+              sourceId: catalogSource.id,
+              snapshotId: snapshot.id,
+              url: catalogSource.url,
+              pageTitle: snapshot.title,
+              exactExcerpt: urlExcerpt,
+              fullText: snapshot.normalizedText
+            });
+            createdEvidence.push(urlEvidence);
+
+            const urlClaimId = uuidv4();
+            const urlClaim: Claim = {
+              id: urlClaimId,
+              missionId,
+              subject: tool.name,
+              predicate: 'officialUrl',
+              value: tool.officialUrl,
+              dataType: 'url',
+              unitOrCurrency: null,
+              billingPeriod: null,
+              supportingEvidenceIds: [urlEvidence.id],
+              contradictoryEvidenceIds: [],
+              confidence: 1.0,
+              verificationStatus: 'verified',
+              extractedAt: now,
+              lastVerifiedAt: now,
+              notes: 'Canonical official link'
+            };
+            createdClaims.push(urlClaim);
+          }
+        } else {
+          // --- UNIVERSAL REAL-WORLD WEB CONTENT EXTRACTOR ---
+          for (const source of sources) {
+            const snapshot = repo.getLatestSnapshotForSource(source.id);
+            if (!snapshot) continue;
+
+            const textLines = snapshot.normalizedText.split('\n').filter(l => l.trim().length > 10);
+            const now = new Date().toISOString();
+            const brandSubject = snapshot.title.split(/[-|—:]/)[0].trim() || source.domain;
+
+            // 1. Page Title Claim
+            const titleExcerpt = snapshot.title.slice(0, 80);
+            if (titleExcerpt && snapshot.normalizedText.includes(titleExcerpt)) {
+              const titleEvidence = evidenceLedger.createEvidenceRecord({
+                missionId,
+                sourceId: source.id,
+                snapshotId: snapshot.id,
+                url: source.url,
+                pageTitle: snapshot.title,
+                exactExcerpt: titleExcerpt,
+                fullText: snapshot.normalizedText,
+                selector: 'title'
+              });
+              createdEvidence.push(titleEvidence);
+
+              createdClaims.push({
+                id: uuidv4(),
+                missionId,
+                subject: brandSubject,
+                predicate: 'pageTitle',
+                value: snapshot.title,
+                dataType: 'string',
+                unitOrCurrency: null,
+                billingPeriod: null,
+                supportingEvidenceIds: [titleEvidence.id],
+                contradictoryEvidenceIds: [],
+                confidence: 1.0,
+                verificationStatus: 'verified',
+                extractedAt: now,
+                lastVerifiedAt: now,
+                notes: 'Page header and identity assertion'
+              });
+            }
+
+            // 2. Pricing / Cost Excerpt
+            const priceRegex = /([$₹€£]\s*[0-9]+(?:[.,][0-9]+)?(?:\s*\/\s*(?:mo|month|yr|year|user))?|free\s+tier|free\s+plan|open\s+source)/i;
+            const priceLine = textLines.find(l => priceRegex.test(l));
+            if (priceLine) {
+              const match = priceLine.match(priceRegex);
+              const priceExcerpt = match ? match[0].trim() : priceLine.slice(0, 40).trim();
+              if (snapshot.normalizedText.includes(priceExcerpt)) {
+                const priceEvidence = evidenceLedger.createEvidenceRecord({
+                  missionId,
+                  sourceId: source.id,
+                  snapshotId: snapshot.id,
+                  url: source.url,
+                  pageTitle: snapshot.title,
+                  exactExcerpt: priceExcerpt,
+                  fullText: snapshot.normalizedText,
+                  selector: 'body'
+                });
+                createdEvidence.push(priceEvidence);
+
+                const numMatch = priceExcerpt.match(/[0-9]+/);
+                const numericVal = numMatch ? Number(numMatch[0]) : 0;
+                const currency = priceExcerpt.includes('₹') ? 'INR' : priceExcerpt.includes('€') ? 'EUR' : 'USD';
+
+                createdClaims.push({
+                  id: uuidv4(),
+                  missionId,
+                  subject: brandSubject,
+                  predicate: 'monthlyPrice',
+                  value: numericVal > 0 ? numericVal : 'Free / Community',
+                  dataType: numericVal > 0 ? 'currency' : 'string',
+                  unitOrCurrency: numericVal > 0 ? currency : null,
+                  billingPeriod: 'monthly',
+                  supportingEvidenceIds: [priceEvidence.id],
+                  contradictoryEvidenceIds: [],
+                  confidence: 1.0,
+                  verificationStatus: 'verified',
+                  extractedAt: now,
+                  lastVerifiedAt: now,
+                  notes: `Live pricing excerpt extracted from ${source.domain}`
+                });
+              }
+            }
+
+            // 3. Key Offerings / Substantive sentences
+            const substantiveSentences = textLines.filter(l => 
+              l.length > 25 && 
+              l.length < 180 && 
+              !l.toLowerCase().includes('cookie') && 
+              !l.toLowerCase().includes('privacy policy')
+            ).slice(0, 4);
+
+            substantiveSentences.forEach((sentence, idx) => {
+              const featExcerpt = sentence.slice(0, 90).trim();
+              if (snapshot.normalizedText.includes(featExcerpt)) {
+                const featEvidence = evidenceLedger.createEvidenceRecord({
+                  missionId,
+                  sourceId: source.id,
+                  snapshotId: snapshot.id,
+                  url: source.url,
+                  pageTitle: snapshot.title,
+                  exactExcerpt: featExcerpt,
+                  fullText: snapshot.normalizedText,
+                  selector: 'body'
+                });
+                createdEvidence.push(featEvidence);
+
+                createdClaims.push({
+                  id: uuidv4(),
+                  missionId,
+                  subject: brandSubject,
+                  predicate: `feature_${idx + 1}`,
+                  value: sentence.trim(),
+                  dataType: 'string',
+                  unitOrCurrency: null,
+                  billingPeriod: null,
+                  supportingEvidenceIds: [featEvidence.id],
+                  contradictoryEvidenceIds: [],
+                  confidence: 1.0,
+                  verificationStatus: 'verified',
+                  extractedAt: now,
+                  lastVerifiedAt: now,
+                  notes: `Key verified capability from live page`
+                });
+              }
+            });
+
+            // 4. Official URL
+            const urlExcerpt = source.url;
+            const canonicalEvidence = evidenceLedger.createEvidenceRecord({
+              missionId,
+              sourceId: source.id,
+              snapshotId: snapshot.id,
+              url: source.url,
+              pageTitle: snapshot.title,
+              exactExcerpt: urlExcerpt,
+              fullText: snapshot.normalizedText
+            });
+            createdEvidence.push(canonicalEvidence);
+
+            createdClaims.push({
+              id: uuidv4(),
+              missionId,
+              subject: brandSubject,
+              predicate: 'officialUrl',
+              value: source.url,
+              dataType: 'url',
+              unitOrCurrency: null,
+              billingPeriod: null,
+              supportingEvidenceIds: [canonicalEvidence.id],
+              contradictoryEvidenceIds: [],
+              confidence: 1.0,
+              verificationStatus: 'verified',
+              extractedAt: now,
+              lastVerifiedAt: now,
+              notes: 'Verified canonical domain'
+            });
+          }
         }
 
         repo.createClaims(createdClaims);
 
         // Add Lineage Edges: Snapshot -> Evidence and Evidence -> Claim
         for (const ev of createdEvidence) {
-          lineageManager.addEdge(missionId, snapshot.id, ev.id, 'SNAPSHOT_TO_EVIDENCE');
+          lineageManager.addEdge(missionId, ev.snapshotId, ev.id, 'SNAPSHOT_TO_EVIDENCE');
         }
         for (const cl of createdClaims) {
           for (const evId of cl.supportingEvidenceIds) {

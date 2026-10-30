@@ -6,6 +6,7 @@ import { LiveExecution } from './pages/LiveExecution.js';
 import { EvidenceExplorer } from './pages/EvidenceExplorer.js';
 import { LineageGraph } from './pages/LineageGraph.js';
 import { VerificationReport } from './pages/VerificationReport.js';
+import { GTMStudio } from './pages/GTMStudio.js';
 import { Settings } from './pages/Settings.js';
 import { api } from './api/client.js';
 
@@ -32,6 +33,20 @@ function LatestMissionRedirect() {
   return <Navigate to="/" replace />;
 }
 
+// Helper component for /missions/latest/gtm or /gtm
+function LatestGTMRedirect() {
+  const { data } = useQuery({
+    queryKey: ['missions'],
+    queryFn: () => api.listMissions()
+  });
+
+  const latest = data?.missions?.[0];
+  if (latest) {
+    return <Navigate to={`/missions/${latest.id}/gtm`} replace />;
+  }
+  return <Navigate to="/" replace />;
+}
+
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -40,10 +55,13 @@ export function App() {
           <Route path="/" element={<Layout />}>
             <Route index element={<MissionWorkspace />} />
             <Route path="missions/latest/live" element={<LatestMissionRedirect />} />
+            <Route path="missions/latest/gtm" element={<LatestGTMRedirect />} />
+            <Route path="gtm" element={<LatestGTMRedirect />} />
             <Route path="missions/:id/live" element={<LiveExecution />} />
             <Route path="missions/:id/evidence" element={<EvidenceExplorer />} />
             <Route path="missions/:id/lineage" element={<LineageGraph />} />
             <Route path="missions/:id/report" element={<VerificationReport />} />
+            <Route path="missions/:id/gtm" element={<GTMStudio />} />
             <Route path="settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

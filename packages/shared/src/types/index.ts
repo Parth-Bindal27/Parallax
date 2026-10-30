@@ -71,7 +71,7 @@ export type BrowserActionResultStatus =
   | 'blocked'
   | 'failed';
 
-export type ArtifactType = 'CSV' | 'MARKDOWN' | 'JSON' | 'HTML';
+export type ArtifactType = 'CSV' | 'MARKDOWN' | 'JSON' | 'HTML' | 'IMAGE' | 'AUDIO' | 'VIDEO';
 
 export interface MissionSpecification {
   objective: string;
@@ -332,4 +332,103 @@ export interface LineageGraphData {
     label?: string;
     isStale: boolean;
   }[];
+}
+
+export interface BattlecardEntry {
+  competitor: string;
+  monthlyPrice: string;
+  freeTier: string;
+  coreStrength: string;
+  vulnerability: string;
+  verifiedEvidenceQuote: string;
+  evidenceId: string;
+}
+
+export interface CreativeAssetSpec {
+  id: string;
+  type: 'social_banner' | 'comparison_card' | 'feature_spotlight';
+  title: string;
+  headline: string;
+  subheadline: string;
+  callToAction: string;
+  accentColor: string;
+  verifiedStats: { label: string; value: string }[];
+  generatedImageUrl?: string;
+  generatedImageFormat?: string;
+  generatedImageSize?: number;
+  generatedImageHash?: string;
+  generationProvider?: string;
+}
+
+export interface VisionAsset {
+  id: string;
+  missionId: string;
+  filename: string;
+  url: string;
+  sizeBytes: number;
+  mimeType: string;
+  sha256Hash: string;
+  extractedText?: string;
+  visualClaims?: string[];
+  uploadedAt: string;
+}
+
+export interface VideoCapabilityStatus {
+  status: 'FUTURE_CAPABILITY' | 'AVAILABLE';
+  supportedProviders: string[];
+  browserSessionRecordingAvailable: boolean;
+  browserRecordingUrl?: string;
+  configurationRequirement: string;
+}
+
+export interface AdaLAuditExecution {
+  status: 'PASS' | 'FAIL';
+  executedAt: string;
+  fidelityScore: number;
+  componentsTested: string[];
+  assertions: {
+    name: string;
+    target: string;
+    status: 'PASS' | 'FAIL';
+    details: string;
+  }[];
+  traceLog: string;
+}
+
+export interface GTMCampaignPackage {
+  missionId: string;
+  generatedAt: string;
+  productName: string;
+  targetAudience: {
+    segment: string;
+    painPoint: string;
+    strategicHook: string;
+  }[];
+  battlecard: BattlecardEntry[];
+  positioning: {
+    elevatorPitch: string;
+    keyDifferentiators: string[];
+    objectionHandling: { objection: string; counterPitch: string; verifiedProof: string }[];
+  };
+  creativeAssets: CreativeAssetSpec[];
+  audioVoiceoverScript: {
+    durationSeconds: number;
+    title: string;
+    sections: { timestamp: string; speaker: string; text: string; soundEffect?: string }[];
+    generatedAudioUrl?: string;
+    generatedAudioFormat?: string;
+    generatedAudioSize?: number;
+    generatedAudioHash?: string;
+    audioProvider?: string;
+  };
+  launchChannels: {
+    channel: string;
+    postCopy: string;
+    hashtags: string[];
+  }[];
+  visionAssets?: VisionAsset[];
+  videoCapabilityStatus?: VideoCapabilityStatus;
+  adalAuditExecution?: AdaLAuditExecution;
+  adalFidelityScore: number;
+  adalAuditSummary: string;
 }

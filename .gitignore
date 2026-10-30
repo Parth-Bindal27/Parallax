@@ -10,12 +10,18 @@ build/
 *.tsbuildinfo
 
 # Database and runtime data (do not commit runtime snapshots or db)
-data/parallax.db
 data/parallax.db*
 data/snapshots/*
 data/artifacts/*
+**/data/parallax.db*
+**/data/snapshots/*
+**/data/artifacts/*
 !data/snapshots/.gitkeep
 !data/artifacts/.gitkeep
+!**/data/snapshots/.gitkeep
+!**/data/artifacts/.gitkeep
+_backup_previous/
+test-e2e.js
 
 # Environment variables
 .env

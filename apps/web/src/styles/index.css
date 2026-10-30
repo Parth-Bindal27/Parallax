@@ -23,24 +23,43 @@
 }
 
 ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.dark ::-webkit-scrollbar-track {
   background: #0a101d;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1c2b47;
+  background: #cbd5e1;
   border-radius: 4px;
 }
 
+.dark ::-webkit-scrollbar-thumb {
+  background: #1c2b47;
+}
+
 ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
   background: #263758;
 }
 
 /* Glassmorphism surfaces */
 .glass-panel {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.06);
+}
+
+.dark .glass-panel {
   background: rgba(16, 25, 45, 0.75);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(56, 75, 112, 0.35);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
 }
 
 .glass-panel-hover {
@@ -49,7 +68,7 @@
 
 .glass-panel-hover:hover {
   border-color: rgba(6, 182, 212, 0.4);
-  box-shadow: 0 4px 20px -2px rgba(6, 182, 212, 0.15);
+  box-shadow: 0 6px 24px -2px rgba(6, 182, 212, 0.12);
 }
 
 /* Glow effects */

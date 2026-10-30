@@ -7,14 +7,20 @@ import { intentCompiler } from '../../apps/server/src/missions/intentCompiler.js
 import { missionRunner } from '../../apps/server/src/missions/missionRunner.js';
 import { repo } from '../../apps/server/src/database/repository.js';
 import { fixtureManager } from '../../apps/server/src/fixtures/fixtureServer.js';
+import { ensureTestServer, closeTestServer } from '../setup/testServer.js';
 
 describe('Integration - Mission Lifecycle & Verification', () => {
   beforeAll(async () => {
+    await ensureTestServer();
     runMigrations();
     try {
       await fetch('http://localhost:3001/api/v1/fixtures/reset', { method: 'POST' });
     } catch {}
     fixtureManager.resetToBaseline();
+  });
+
+  afterAll(async () => {
+    await closeTestServer();
   });
 
   it('runs complete end-to-end mission from prompt to verified artifacts', async () => {
