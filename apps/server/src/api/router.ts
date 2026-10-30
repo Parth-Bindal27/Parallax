@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
+import { v4 as uuidv4 } from 'uuid';
 import {
   CreateMissionRequestSchema,
   ResolveApprovalRequestSchema,
@@ -16,6 +17,7 @@ import { fixtureManager, renderFixtureHtml } from '../fixtures/fixtureServer.js'
 import { providerFactory } from '../providers/providerFactory.js';
 import { gtmGenerator } from '../gtm/gtmGenerator.js';
 import { multimodalEngine } from '../multimodal/multimodalEngine.js';
+import { policyEngine } from '../policies/policyEngine.js';
 import { logger } from '../observability/logger.js';
 
 export const apiRouter = Router();
@@ -454,6 +456,47 @@ apiRouter.post('/api/v1/approvals/:id/resolve', (req: Request, res: Response) =>
 
     repo.resolveApproval(req.params.id, parsed.data.decision === 'approve' ? 'approved' : 'denied');
     res.json({ success: true, approvalId: req.params.id, status: parsed.data.decision });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+apiRouter.post('/api/v1/missions/:id/simulate-approval', (req: Request, res: Response) => {
+  try {
+    const missionId = req.params.id;
+    const { actionType, target, reason, riskLevel } = req.body;
+    const approval = policyEngine.createApprovalRequest(
+      missionId,
+      actionType || 'FORM_SUBMIT',
+      target || 'https://checkout.stripe.com/pay',
+      reason || 'Autonomous agent attempted to submit payment credentials. Autonomy level INTERACTIVE_NAVIGATION blocks unapproved transactions.',
+      riskLevel || 'critical'
+    );
+    missionRunner.emitMissionEvent(missionId, 'approval_requested', { approval });
+    res.json({ success: true, approval });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+apiRouter.post('/api/v1/missions/:id/manual-action', async (req: Request, res: Response) => {
+  try {
+    const missionId = req.params.id;
+    const { actionType, targetUrl, selector } = req.body;
+    const actionId = uuidv4();
+    const actionLog = {
+      actionId,
+      missionId,
+      actionType: actionType || 'NAVIGATE',
+      url: targetUrl || 'http://localhost:3001/fixtures/student-ai-tools',
+      selector: selector || null,
+      status: 'performed' as const,
+      startTime: new Date().toISOString(),
+      completionTime: new Date().toISOString()
+    };
+    repo.createActionLog(actionLog);
+    missionRunner.emitMissionEvent(missionId, 'browser_action_executed', { action: actionLog, manual: true });
+    res.json({ success: true, action: actionLog });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

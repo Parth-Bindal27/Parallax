@@ -13,10 +13,14 @@ import {
   FileCheck2,
   GitBranch,
   ShieldAlert,
-  Terminal
+  Terminal,
+  Zap,
+  Hand,
+  RefreshCw,
+  RotateCcw
 } from 'lucide-react';
 import { api } from '../api/client.js';
-import type { BrowserActionEvent, MissionEvent } from '@parallax/shared';
+import type { BrowserActionEvent, MissionEvent, SourceDriftReport } from '@parallax/shared';
 
 export function LiveExecution() {
   const { id: missionId } = useParams<{ id: string }>();
@@ -24,6 +28,12 @@ export function LiveExecution() {
   const queryClient = useQueryClient();
 
   const [selectedAction, setSelectedAction] = useState<BrowserActionEvent | null>(null);
+  const [manualTakeoverOpen, setManualTakeoverOpen] = useState(false);
+  const [manualActionType, setManualActionType] = useState('NAVIGATE');
+  const [manualUrl, setManualUrl] = useState('http://localhost:3001/fixtures/student-ai-tools');
+  const [manualSelector, setManualSelector] = useState('');
+  const [driftStatusMessage, setDriftStatusMessage] = useState<string | null>(null);
+  const [latestDriftReport, setLatestDriftReport] = useState<SourceDriftReport | null>(null);
 
   // If no mission ID, redirect to workspace
   useEffect(() => {
@@ -49,7 +59,7 @@ export function LiveExecution() {
   });
 
   // Fetch Claims
-  const { data: claimsData } = useQuery({
+  const { data: claimsData, refetch: refetchClaims } = useQuery({
     queryKey: ['claims', missionId],
     queryFn: () => (missionId ? api.getClaims(missionId) : null),
     enabled: !!missionId,
@@ -57,7 +67,7 @@ export function LiveExecution() {
   });
 
   // Fetch Evidence
-  const { data: evidenceData } = useQuery({
+  const { data: evidenceData, refetch: refetchEvidence } = useQuery({
     queryKey: ['evidence', missionId],
     queryFn: () => (missionId ? api.getEvidence(missionId) : null),
     enabled: !!missionId,
@@ -106,7 +116,7 @@ export function LiveExecution() {
     return () => {
       eventSource.close();
     };
-  }, [missionId, refetchMission, refetchActions, refetchApprovals]);
+  }, [missionId, refetchMission, refetchActions, refetchApprovals, queryClient]);
 
   // Controls Mutations
   const pauseMutation = useMutation({
@@ -128,6 +138,67 @@ export function LiveExecution() {
     mutationFn: ({ approvalId, decision }: { approvalId: string; decision: 'approve' | 'deny' }) =>
       api.resolveApproval(approvalId, decision),
     onSuccess: () => refetchApprovals()
+  });
+
+  const simulateApprovalMutation = useMutation({
+    mutationFn: () =>
+      api.simulateApproval(missionId!, {
+        actionType: 'FORM_SUBMIT',
+        target: 'https://checkout.stripe.com/pay',
+        reason: 'Autonomous agent attempted to submit payment credentials. Autonomy level INTERACTIVE_NAVIGATION blocks unapproved transactions.',
+        riskLevel: 'critical'
+      }),
+    onSuccess: () => refetchApprovals()
+  });
+
+  const manualActionMutation = useMutation({
+    mutationFn: () =>
+      api.sendManualAction(missionId!, {
+        actionType: manualActionType,
+        targetUrl: manualUrl,
+        selector: manualSelector || undefined
+      }),
+    onSuccess: () => {
+      refetchActions();
+      setManualSelector('');
+    }
+  });
+
+  // Drift Demo Mutations
+  const mutateFixtureMutation = useMutation({
+    mutationFn: () => api.mutateFixture('price_increase'),
+    onSuccess: () => {
+      setDriftStatusMessage(`⚠️ Source fixture modified: StudyPilot AI price increased to ₹699/mo (was ₹499/mo).`);
+    }
+  });
+
+  const checkDriftMutation = useMutation({
+    mutationFn: () => api.checkDrift(missionId!),
+    onSuccess: (data) => {
+      setLatestDriftReport(data.report);
+      setDriftStatusMessage(`⚡ Drift Check: Detected=${data.report.hasDrift ? 'YES' : 'NO'}. Affected evidence: ${data.report.staleEvidenceIds.length}. Stale claims: ${data.report.staleClaimIds.length}.`);
+      refetchClaims();
+      refetchEvidence();
+    }
+  });
+
+  const revalidateDriftMutation = useMutation({
+    mutationFn: () => api.revalidateDrift(missionId!, latestDriftReport!.id),
+    onSuccess: (data) => {
+      setDriftStatusMessage(`✓ Autonomous Self-Healing Complete! Re-extracted ${data.updatedClaims.length} stale claim(s) with new verdict: ${data.newRun.verdict}. Generated v2 artifacts.`);
+      refetchMission();
+      refetchClaims();
+      refetchEvidence();
+      queryClient.invalidateQueries({ queryKey: ['artifacts', missionId] });
+    }
+  });
+
+  const resetFixtureMutation = useMutation({
+    mutationFn: () => api.resetFixture(),
+    onSuccess: () => {
+      setDriftStatusMessage('✓ Fixture reset to baseline (StudyPilot AI = ₹499/mo).');
+      setLatestDriftReport(null);
+    }
   });
 
   const mission = missionData?.mission;
@@ -171,7 +242,7 @@ export function LiveExecution() {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {mission?.status === 'running' ? (
               <button
                 onClick={() => pauseMutation.mutate()}
@@ -199,6 +270,29 @@ export function LiveExecution() {
                 <span>Cancel</span>
               </button>
             )}
+
+            {/* Manual Takeover Toggle */}
+            <button
+              onClick={() => setManualTakeoverOpen(!manualTakeoverOpen)}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border text-xs font-bold transition-colors cursor-pointer ${
+                manualTakeoverOpen
+                  ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                  : 'bg-purple-50 dark:bg-purple-900/20 text-purple-800 dark:text-purple-300 border-purple-200 dark:border-purple-500/30 hover:bg-purple-100'
+              }`}
+            >
+              <Hand className="w-3.5 h-3.5" />
+              <span>{manualTakeoverOpen ? 'Release Control' : 'Manual Takeover'}</span>
+            </button>
+
+            {/* Simulate Policy Gate */}
+            <button
+              onClick={() => simulateApprovalMutation.mutate()}
+              title="Demonstrate Human-in-the-Loop policy gate on critical action"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40 text-xs font-bold transition-colors cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span>Test Policy Gate</span>
+            </button>
 
             <button
               onClick={() => navigate(`/missions/${missionId}/lineage`)}
@@ -284,6 +378,142 @@ export function LiveExecution() {
           ))}
         </div>
       )}
+
+      {/* Manual Takeover & Intervention Dock */}
+      {manualTakeoverOpen && (
+        <div className="rounded-2xl bg-purple-50 dark:bg-purple-950/20 p-5 sm:p-6 border-2 border-purple-300 dark:border-purple-600/40 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Hand className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              <div>
+                <h3 className="text-sm font-bold text-purple-950 dark:text-purple-200">Human-in-the-Loop Manual Takeover Active</h3>
+                <p className="text-xs text-purple-700 dark:text-purple-300">Directly dispatch browser actions to the running Playwright Chromium session</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setManualTakeoverOpen(false)}
+              className="px-3 py-1 rounded-lg bg-white dark:bg-workspace-800 border border-purple-200 dark:border-purple-600/50 text-purple-800 dark:text-purple-200 text-xs font-bold hover:bg-purple-100 cursor-pointer"
+            >
+              Release Control to Autonomous Agent
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+            <div className="sm:col-span-3">
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Action Type</label>
+              <select
+                value={manualActionType}
+                onChange={(e) => setManualActionType(e.target.value)}
+                className="w-full text-xs font-mono px-3 py-2 rounded-xl bg-white dark:bg-workspace-800 border border-purple-200 dark:border-workspace-700 text-slate-800 dark:text-slate-200"
+              >
+                <option value="NAVIGATE">NAVIGATE</option>
+                <option value="CLICK">CLICK</option>
+                <option value="EXTRACT_TEXT">EXTRACT_TEXT</option>
+                <option value="SNAPSHOT">SNAPSHOT</option>
+                <option value="SCROLL">SCROLL</option>
+              </select>
+            </div>
+
+            <div className="sm:col-span-5">
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Target URL</label>
+              <input
+                type="text"
+                value={manualUrl}
+                onChange={(e) => setManualUrl(e.target.value)}
+                placeholder="http://..."
+                className="w-full text-xs font-mono px-3 py-2 rounded-xl bg-white dark:bg-workspace-800 border border-purple-200 dark:border-workspace-700 text-slate-800 dark:text-slate-200"
+              />
+            </div>
+
+            <div className="sm:col-span-4">
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">DOM Selector (Optional)</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={manualSelector}
+                  onChange={(e) => setManualSelector(e.target.value)}
+                  placeholder="#price-tag, .card..."
+                  className="flex-1 text-xs font-mono px-3 py-2 rounded-xl bg-white dark:bg-workspace-800 border border-purple-200 dark:border-workspace-700 text-slate-800 dark:text-slate-200"
+                />
+                <button
+                  onClick={() => manualActionMutation.mutate()}
+                  disabled={manualActionMutation.isPending}
+                  className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs whitespace-nowrap"
+                >
+                  {manualActionMutation.isPending ? 'Sending...' : 'Dispatch'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Source-Drift & Self-Healing Live Control Bar */}
+      <div className="rounded-2xl bg-white dark:bg-workspace-900 p-5 sm:p-6 border border-slate-200/90 dark:border-workspace-700/80 shadow-sm space-y-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <RefreshCw className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>Autonomous Source-Drift & Selective Revalidation Showcase</span>
+                <span className="text-[10px] font-mono uppercase bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded font-bold">
+                  Zero False-Alarm Guarantee
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Test how PARALLAX detects competitor web page changes, isolates stale claims, and auto-heals deliverables.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => mutateFixtureMutation.mutate()}
+              disabled={mutateFixtureMutation.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40 text-xs font-bold transition-colors cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-600" />
+              <span>1. Mutate Price (₹499 → ₹699)</span>
+            </button>
+
+            <button
+              onClick={() => checkDriftMutation.mutate()}
+              disabled={checkDriftMutation.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-900/20 hover:bg-cyan-100 text-cyan-900 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-500/40 text-xs font-bold transition-colors cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-cyan-600 ${checkDriftMutation.isPending ? 'animate-spin' : ''}`} />
+              <span>2. Check Drift</span>
+            </button>
+
+            {latestDriftReport?.hasDrift && (
+              <button
+                onClick={() => revalidateDriftMutation.mutate()}
+                disabled={revalidateDriftMutation.isPending}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs animate-pulse"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 fill-current" />
+                <span>3. Auto-Revalidate (v2 Artifacts)</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => resetFixtureMutation.mutate()}
+              disabled={resetFixtureMutation.isPending}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-workspace-800 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+              title="Reset fixture to ₹499"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+              <span>Reset</span>
+            </button>
+          </div>
+        </div>
+
+        {driftStatusMessage && (
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-workspace-800/80 border border-slate-200 dark:border-workspace-700 text-xs font-mono text-slate-700 dark:text-slate-200">
+            {driftStatusMessage}
+          </div>
+        )}
+      </div>
 
       {/* Execution DAG Nodes Grid */}
       <div className="rounded-2xl bg-white dark:bg-workspace-900 p-6 sm:p-7 border border-slate-200/90 dark:border-workspace-700/80 shadow-sm space-y-4">

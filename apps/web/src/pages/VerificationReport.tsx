@@ -1,38 +1,84 @@
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
   Download,
-  FileText,
-  ShieldCheck
+  ShieldCheck,
+  Zap,
+  RefreshCw,
+  RotateCcw,
+  PackageCheck
 } from 'lucide-react';
 import { api } from '../api/client.js';
-import type { Artifact, VerificationCheck, VerificationRun } from '@parallax/shared';
+import type { Artifact, VerificationCheck, VerificationRun, SourceDriftReport } from '@parallax/shared';
 
 export function VerificationReport() {
   const { id: missionId } = useParams<{ id: string }>();
+  const queryClient = useQueryClient();
+
+  const [driftStatusMessage, setDriftStatusMessage] = useState<string | null>(null);
+  const [latestDriftReport, setLatestDriftReport] = useState<SourceDriftReport | null>(null);
 
   // Fetch Verification Data
-  const { data: verifData } = useQuery({
+  const { data: verifData, refetch: refetchVerification } = useQuery({
     queryKey: ['verification', missionId],
     queryFn: () => (missionId ? api.getVerification(missionId) : null),
     enabled: !!missionId
   });
 
   // Fetch Artifacts
-  const { data: artifactsData } = useQuery({
+  const { data: artifactsData, refetch: refetchArtifacts } = useQuery({
     queryKey: ['artifacts', missionId],
     queryFn: () => (missionId ? api.getArtifacts(missionId) : null),
     enabled: !!missionId
   });
 
   // Fetch Mission
-  const { data: missionData } = useQuery({
+  const { data: missionData, refetch: refetchMission } = useQuery({
     queryKey: ['mission', missionId],
     queryFn: () => (missionId ? api.getMission(missionId) : null),
     enabled: !!missionId
+  });
+
+  // Drift Demo Mutations
+  const mutateFixtureMutation = useMutation({
+    mutationFn: () => api.mutateFixture('price_increase'),
+    onSuccess: () => {
+      setDriftStatusMessage('⚠️ Vendor page mutated: StudyPilot AI price increased to ₹699/mo (was ₹499/mo). Click "2. Check Drift" to detect.');
+    }
+  });
+
+  const checkDriftMutation = useMutation({
+    mutationFn: () => api.checkDrift(missionId!),
+    onSuccess: (data) => {
+      setLatestDriftReport(data.report);
+      setDriftStatusMessage(`⚡ Drift Audit: Detected=${data.report.hasDrift ? 'YES' : 'NO'}. Flagged ${data.report.staleClaimIds.length} stale claim(s) and ${data.report.staleEvidenceIds.length} invalidated snapshot excerpt(s).`);
+      refetchVerification();
+      refetchMission();
+      queryClient.invalidateQueries({ queryKey: ['claims', missionId] });
+    }
+  });
+
+  const revalidateDriftMutation = useMutation({
+    mutationFn: () => api.revalidateDrift(missionId!, latestDriftReport!.id),
+    onSuccess: (data) => {
+      setDriftStatusMessage(`✓ Autonomous Self-Healing Complete! Selective revalidation produced ${data.newArtifacts.length} v2 artifacts with verdict: ${data.newRun.verdict}. Previous v1 artifacts preserved.`);
+      refetchVerification();
+      refetchArtifacts();
+      refetchMission();
+      queryClient.invalidateQueries({ queryKey: ['claims', missionId] });
+    }
+  });
+
+  const resetFixtureMutation = useMutation({
+    mutationFn: () => api.resetFixture(),
+    onSuccess: () => {
+      setDriftStatusMessage('✓ Fixture reset to baseline state (StudyPilot AI = ₹499/mo).');
+      setLatestDriftReport(null);
+    }
   });
 
   const latestRun: VerificationRun | undefined = verifData?.runs?.[0];
@@ -114,11 +160,78 @@ export function VerificationReport() {
         </div>
       </div>
 
+      {/* Autonomous Source-Drift & Selective Revalidation Showcase */}
+      <div className="rounded-2xl bg-white dark:bg-workspace-900 p-6 sm:p-7 border border-slate-200/90 dark:border-workspace-700/80 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <RefreshCw className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>Autonomous Source-Drift & Selective Self-Healing Engine</span>
+                <span className="text-[10px] font-mono uppercase bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded font-bold">
+                  Zero Hallucination
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Simulate competitor price mutations on live DOM snapshots, isolate invalidated claims, and selectively auto-heal deliverables.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => mutateFixtureMutation.mutate()}
+              disabled={mutateFixtureMutation.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40 text-xs font-bold transition-colors cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-600" />
+              <span>1. Mutate Price (₹499 → ₹699)</span>
+            </button>
+
+            <button
+              onClick={() => checkDriftMutation.mutate()}
+              disabled={checkDriftMutation.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-900/20 hover:bg-cyan-100 text-cyan-900 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-500/40 text-xs font-bold transition-colors cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-cyan-600 ${checkDriftMutation.isPending ? 'animate-spin' : ''}`} />
+              <span>2. Detect Drift</span>
+            </button>
+
+            {latestDriftReport?.hasDrift && (
+              <button
+                onClick={() => revalidateDriftMutation.mutate()}
+                disabled={revalidateDriftMutation.isPending}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs animate-pulse"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 fill-current" />
+                <span>3. Auto-Revalidate (v2 Artifacts)</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => resetFixtureMutation.mutate()}
+              disabled={resetFixtureMutation.isPending}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-workspace-800 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+              title="Reset fixture to baseline ₹499"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+              <span>Reset</span>
+            </button>
+          </div>
+        </div>
+
+        {driftStatusMessage && (
+          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-workspace-850 border border-slate-200 dark:border-workspace-700 text-xs font-mono text-slate-700 dark:text-slate-200 flex items-center justify-between">
+            <span>{driftStatusMessage}</span>
+          </div>
+        )}
+      </div>
+
       {/* Generated Artifacts Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <FileText className="w-5 h-5 text-cyan-600 dark:text-brand-cyan" />
+            <PackageCheck className="w-5 h-5 text-cyan-600 dark:text-brand-cyan" />
             <span>Deliverable Artifacts (Disk Readback Validated)</span>
           </h2>
           <span className="text-xs font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-workspace-800 px-2.5 py-1 rounded">

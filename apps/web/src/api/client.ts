@@ -188,6 +188,20 @@ export const api = {
     });
   },
 
+  async simulateApproval(missionId: string, details?: { actionType?: string; target?: string; reason?: string; riskLevel?: 'low' | 'medium' | 'high' | 'critical' }) {
+    return request<{ success: boolean; approval: ApprovalRequest }>(`${API_BASE}/missions/${missionId}/simulate-approval`, {
+      method: 'POST',
+      body: JSON.stringify(details || {})
+    });
+  },
+
+  async sendManualAction(missionId: string, action: { actionType: string; targetUrl?: string; selector?: string }) {
+    return request<{ success: boolean; action: any }>(`${API_BASE}/missions/${missionId}/manual-action`, {
+      method: 'POST',
+      body: JSON.stringify(action)
+    });
+  },
+
   // Multimodal GTM & Creative Studio (Track Pillar 2)
   async getGTMPackage(missionId: string) {
     return request<{ gtm: GTMCampaignPackage }>(`${API_BASE}/missions/${missionId}/gtm`);
