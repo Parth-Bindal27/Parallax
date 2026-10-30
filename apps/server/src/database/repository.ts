@@ -627,6 +627,12 @@ export class Repository {
   }
 
   // --- ARTIFACTS ---
+  clearArtifacts(missionId: string): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM artifacts WHERE mission_id = ?').run(missionId);
+    db.prepare("DELETE FROM dependency_edges WHERE mission_id = ? AND (edge_type = 'CLAIM_TO_CSV_CELL' OR edge_type = 'CLAIM_TO_REPORT_SECTION')").run(missionId);
+  }
+
   createArtifact(artifact: Artifact): void {
     const db = getDatabase();
     const stmt = db.prepare(`

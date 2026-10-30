@@ -18,6 +18,8 @@ import { providerFactory } from '../providers/providerFactory.js';
 import { gtmGenerator } from '../gtm/gtmGenerator.js';
 import { multimodalEngine } from '../multimodal/multimodalEngine.js';
 import { policyEngine } from '../policies/policyEngine.js';
+import { verificationEngine } from '../verification/verificationEngine.js';
+import { artifactGenerator } from '../artifacts/artifactGenerator.js';
 import { logger } from '../observability/logger.js';
 
 export const apiRouter = Router();
@@ -244,6 +246,19 @@ apiRouter.get('/api/v1/missions/:id/verification', (req: Request, res: Response)
     const checks = runs.length > 0 ? repo.getVerificationChecks(runs[0].id) : [];
     res.json({ runs, latestChecks: checks });
   } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+apiRouter.post('/api/v1/missions/:id/reverify', async (req: Request, res: Response) => {
+  try {
+    const missionId = req.params.id;
+    const run = verificationEngine.executeVerification(missionId);
+    await artifactGenerator.generateAndValidateArtifacts(missionId, 1);
+    const graph = lineageManager.getLineageGraph(missionId);
+    res.json({ success: true, run, graph });
+  } catch (err) {
+    logger.error('Failed to re-verify mission', { error: String(err) });
     res.status(500).json({ error: String(err) });
   }
 });

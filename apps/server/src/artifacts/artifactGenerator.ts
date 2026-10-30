@@ -12,6 +12,7 @@ import type {
   Mission
 } from '@parallax/shared';
 import { repo } from '../database/repository.js';
+import { lineageManager } from '../lineage/lineageManager.js';
 import { logger } from '../observability/logger.js';
 
 export class ArtifactGenerator {
@@ -42,10 +43,24 @@ export class ArtifactGenerator {
     const latestRun = runs[0] || null;
 
     const artifacts: Artifact[] = [];
+    if (version === 1) {
+      repo.clearArtifacts(missionId);
+    }
+
+    const isStudentDemo = mission.rawPrompt.toLowerCase().includes('student ai') && !mission.rawPrompt.toLowerCase().includes('http') && !mission.rawPrompt.toLowerCase().includes('.com');
+    const safePrefix = isStudentDemo
+      ? 'student-ai-tools'
+      : (mission.title || 'research-audit')
+          .toLowerCase()
+          .replace(/research & verify:\s*/i, '')
+          .replace(/https?:\/\//g, '')
+          .replace(/[^a-z0-9]+/g, '-')
+          .slice(0, 30)
+          .replace(/^-|-$/g, '') || 'research-audit';
 
     // 1. Generate CSV
     const csvContent = this.buildCsvComparison(claims, version);
-    const csvFilename = `student-ai-tools-comparison-v${version}.csv`;
+    const csvFilename = `${safePrefix}-comparison-v${version}.csv`;
     const csvArtifact = await this.saveAndValidateArtifact(missionId, 'CSV', csvFilename, csvContent, 'text/csv', version, (readback) => {
       const lines = readback.trim().split('\n');
       if (lines.length < 2) return ['CSV contains header only or is empty'];
@@ -59,7 +74,7 @@ export class ArtifactGenerator {
 
     // 2. Generate Markdown Report
     const mdContent = this.buildMarkdownReport(mission, claims, sources, evidenceList, latestRun, version);
-    const mdFilename = `student-ai-tools-verification-report-v${version}.md`;
+    const mdFilename = `${safePrefix}-verification-report-v${version}.md`;
     const mdArtifact = await this.saveAndValidateArtifact(missionId, 'MARKDOWN', mdFilename, mdContent, 'text/markdown', version, (readback) => {
       const requiredHeadings = ['# Executive Summary', '## Methodology', '## Sources Consulted', '## Verified Findings Matrix'];
       const missing = requiredHeadings.filter(h => !readback.includes(h));
@@ -69,7 +84,7 @@ export class ArtifactGenerator {
 
     // 3. Generate JSON Manifest
     const jsonContent = this.buildJsonManifest(mission, claims, sources, evidenceList, latestRun, version);
-    const jsonFilename = `student-ai-tools-manifest-v${version}.json`;
+    const jsonFilename = `${safePrefix}-manifest-v${version}.json`;
     const jsonArtifact = await this.saveAndValidateArtifact(missionId, 'JSON', jsonFilename, jsonContent, 'application/json', version, (readback) => {
       try {
         const parsed = JSON.parse(readback);
@@ -85,7 +100,7 @@ export class ArtifactGenerator {
 
     // 4. Generate HTML Report
     const htmlContent = this.buildHtmlReport(mission, claims, latestRun, version);
-    const htmlFilename = `student-ai-tools-audit-v${version}.html`;
+    const htmlFilename = `${safePrefix}-audit-v${version}.html`;
     const htmlArtifact = await this.saveAndValidateArtifact(missionId, 'HTML', htmlFilename, htmlContent, 'text/html', version, (readback) => {
       if (!readback.includes('<!DOCTYPE html>') || !readback.includes('</html>')) {
         return ['Invalid HTML document structure'];
@@ -93,6 +108,12 @@ export class ArtifactGenerator {
       return [];
     });
     artifacts.push(htmlArtifact);
+
+    // Link in lineage: Claim -> CSV and Report
+    for (const claim of claims) {
+      lineageManager.addEdge(missionId, claim.id, csvArtifact.id, 'CLAIM_TO_CSV_CELL');
+      lineageManager.addEdge(missionId, claim.id, mdArtifact.id, 'CLAIM_TO_REPORT_SECTION');
+    }
 
     logger.info(`Generated and validated ${artifacts.length} artifacts for mission ${missionId} (version ${version})`);
     return artifacts;

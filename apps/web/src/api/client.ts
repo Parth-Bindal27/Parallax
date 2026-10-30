@@ -151,6 +151,16 @@ export const api = {
     return request<{ runs: VerificationRun[]; latestChecks: VerificationCheck[] }>(`${API_BASE}/missions/${missionId}/verification`);
   },
 
+  async reverifyMission(missionId: string) {
+    return request<{
+      success: boolean;
+      run: VerificationRun;
+      graph: LineageGraphData;
+    }>(`${API_BASE}/missions/${missionId}/reverify`, {
+      method: 'POST'
+    });
+  },
+
   async getArtifacts(missionId: string) {
     return request<{ artifacts: Artifact[] }>(`${API_BASE}/missions/${missionId}/artifacts`);
   },

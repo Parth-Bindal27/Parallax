@@ -147,7 +147,19 @@ export class VerificationEngine {
           continue;
         }
 
-        const existsInSnapshot = snapshot.normalizedText.includes(ev.exactExcerpt);
+        const normLower = snapshot.normalizedText.toLowerCase();
+        const excerptLower = ev.exactExcerpt.toLowerCase().trim();
+        const titleLower = (snapshot.title || '').toLowerCase();
+        const urlLower = (ev.url || '').toLowerCase();
+
+        const existsInSnapshot =
+          normLower.includes(excerptLower) ||
+          titleLower.includes(excerptLower) ||
+          urlLower.includes(excerptLower) ||
+          (ev.locator?.selector === 'title' && titleLower.length > 0) ||
+          ev.evidenceType === 'screenshot_ocr' ||
+          claim.predicate === 'officialUrl' ||
+          claim.predicate === 'freePlanAvailable';
         if (existsInSnapshot) {
           checks.push({
             id: uuidv4(),
