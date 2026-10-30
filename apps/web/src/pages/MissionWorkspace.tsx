@@ -69,7 +69,7 @@ export function MissionWorkspace() {
 
   // Create mission mutation
   const createMutation = useMutation({
-    mutationFn: (data: { prompt: string; autonomyLevel: AutonomyPolicyLevel }) => api.createMission(data),
+    mutationFn: (data: { prompt: string; autonomyLevel: AutonomyPolicyLevel; targetUrls?: string[] }) => api.createMission(data),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['missions'] });
       // Immediately initiate execution
@@ -90,7 +90,8 @@ export function MissionWorkspace() {
     if (!prompt.trim() || isSubmitting) return;
     setIsSubmitting(true);
     setErrorMsg(null);
-    createMutation.mutate({ prompt, autonomyLevel });
+    const targetUrls = liveUrl.trim() ? [liveUrl.trim()] : undefined;
+    createMutation.mutate({ prompt, autonomyLevel, targetUrls });
   };
 
   return (
@@ -208,15 +209,15 @@ export function MissionWorkspace() {
               </div>
             </div>
 
-            {/* Direct Live URL Injection */}
+            {/* Optional Target URL / Direct Link */}
             <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-workspace-850 border border-slate-200 dark:border-workspace-700/80 space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                   <Globe className="w-3.5 h-3.5 text-cyan-600" />
-                  <span>Target Any Real-World Website URL</span>
+                  <span>Optional Target Website / Direct Link</span>
                 </label>
                 <span className="text-[10px] font-mono text-cyan-700 dark:text-cyan-400 bg-cyan-100 dark:bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-200 dark:border-cyan-800">
-                  Universal Crawler Active
+                  Auto-Discovered from Prompt if Blank
                 </span>
               </div>
               <div className="flex gap-2">

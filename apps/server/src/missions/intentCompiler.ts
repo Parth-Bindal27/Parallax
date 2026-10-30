@@ -33,15 +33,62 @@ export class IntentCompiler {
       'You are the PARALLAX Intent Compiler. Deconstruct the user research prompt into a strict, verifiable mission specification.'
     );
 
-    // Auto-detect URLs from prompt if present
-    const extractedPromptUrls = input.prompt.match(/https?:\/\/[^\s"'<>]+/gi) || [];
-    if (extractedPromptUrls.length > 0) {
-      spec.researchTargets = Array.from(new Set([...extractedPromptUrls, ...(spec.researchTargets || [])]));
+    // Auto-detect URLs, bare domains, and entity names from prompt or targetUrls
+    const detectedTargets: string[] = [];
+
+    // 1. Explicit targetUrls passed in input
+    if (input.targetUrls && input.targetUrls.length > 0) {
+      for (const t of input.targetUrls) {
+        const clean = t.trim();
+        if (clean) {
+          detectedTargets.push(clean.startsWith('http://') || clean.startsWith('https://') ? clean : `https://${clean}`);
+        }
+      }
     }
 
-    // If custom target URLs were explicitly provided, use them
-    if (input.targetUrls && input.targetUrls.length > 0) {
-      spec.researchTargets = input.targetUrls;
+    // 2. Full URLs in prompt: https?://...
+    const fullUrls = input.prompt.match(/https?:\/\/[^\s"'<>]+/gi) || [];
+    for (const u of fullUrls) {
+      detectedTargets.push(u);
+    }
+
+    // 3. Domain names in prompt: e.g. github.com, news.ycombinator.com, linear.app, notion.so
+    const domainMatches = input.prompt.match(/\b([a-zA-Z0-9-]+\.(?:com|org|net|app|io|ai|dev|co|so|in|edu|gov)(?:\/[^\s"'<>]*)?)\b/gi) || [];
+    for (const d of domainMatches) {
+      const url = `https://${d}`;
+      if (!detectedTargets.some(existing => existing.includes(d))) {
+        detectedTargets.push(url);
+      }
+    }
+
+    // 4. Common entity resolution for tool/company names in prompt
+    const lowerPrompt = input.prompt.toLowerCase();
+    const ENTITY_MAP: Record<string, string> = {
+      'github': 'https://github.com',
+      'linear': 'https://linear.app',
+      'notion': 'https://notion.so',
+      'hackernews': 'https://news.ycombinator.com',
+      'hacker news': 'https://news.ycombinator.com',
+      'ycombinator': 'https://news.ycombinator.com',
+      'supabase': 'https://supabase.com',
+      'figma': 'https://figma.com',
+      'canva': 'https://canva.com',
+      'stripe': 'https://stripe.com',
+      'openai': 'https://openai.com',
+      'anthropic': 'https://anthropic.com',
+      'cursor': 'https://cursor.com',
+      'vercel': 'https://vercel.com',
+      'cloudflare': 'https://cloudflare.com'
+    };
+
+    for (const [entityName, resolvedUrl] of Object.entries(ENTITY_MAP)) {
+      if (lowerPrompt.includes(entityName) && !detectedTargets.includes(resolvedUrl)) {
+        detectedTargets.push(resolvedUrl);
+      }
+    }
+
+    if (detectedTargets.length > 0) {
+      spec.researchTargets = Array.from(new Set(detectedTargets));
     }
 
     const title = input.title || `Research & Verify: ${spec.researchTargets.slice(0, 3).join(', ')}${spec.researchTargets.length > 3 ? '...' : ''}`;

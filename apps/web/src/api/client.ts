@@ -83,7 +83,7 @@ export const api = {
   },
 
   // Missions
-  async createMission(data: { prompt: string; title?: string; autonomyLevel?: AutonomyPolicyLevel }) {
+  async createMission(data: { prompt: string; title?: string; autonomyLevel?: AutonomyPolicyLevel; targetUrls?: string[] }) {
     return request<{ mission: Mission; nodes: MissionNode[] }>(`${API_BASE}/missions`, {
       method: 'POST',
       body: JSON.stringify(data)

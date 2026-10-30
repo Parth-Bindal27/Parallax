@@ -20,7 +20,7 @@ export const CreateMissionRequestSchema = z.object({
   prompt: z.string().min(3, 'Prompt must be at least 3 characters long'),
   title: z.string().optional(),
   autonomyLevel: AutonomyPolicyLevelSchema.default('INTERACTIVE_NAVIGATION'),
-  targetUrls: z.array(z.string().url('Invalid URL format')).optional(),
+  targetUrls: z.array(z.string()).optional(),
   enableFixtureOverride: z.boolean().optional()
 });
 
