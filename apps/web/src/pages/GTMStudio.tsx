@@ -49,7 +49,17 @@ export function GTMStudio() {
     enabled: !!missionId
   });
 
+  const { data: artifactsData, refetch: refetchArtifacts } = useQuery({
+    queryKey: ['mission-artifacts', missionId],
+    queryFn: () => (missionId ? api.getArtifacts(missionId) : null),
+    enabled: !!missionId
+  });
+
   const gtm: GTMCampaignPackage | undefined = data?.gtm || (data as { gtmPackage?: GTMCampaignPackage })?.gtmPackage;
+
+  const uploadedVisualArtifacts = (artifactsData?.artifacts || []).filter(
+    a => a.artifactType === 'IMAGE' && a.filename.startsWith('upload_')
+  );
 
   // Web Speech API Voiceover Player
   const handleToggleSpeech = () => {
@@ -168,8 +178,10 @@ export function GTMStudio() {
         setUploadStatus(`Visual evidence extracted from '${file.name}'`);
         setNotificationMessage(`✓ Visual document intake complete! Hashed '${file.name}' and attached claims to evidence DAG.`);
         await refetch();
+        refetchArtifacts();
         queryClient.invalidateQueries({ queryKey: ['evidence', missionId] });
         queryClient.invalidateQueries({ queryKey: ['artifacts', missionId] });
+        queryClient.invalidateQueries({ queryKey: ['mission-artifacts', missionId] });
         setTimeout(() => setUploadStatus(null), 6000);
       } catch (err: any) {
         setUploadStatus(`Upload failed: ${err.message}`);
@@ -194,8 +206,10 @@ export function GTMStudio() {
       setUploadStatus(`Sample visual document analyzed and linked to evidence DAG.`);
       setNotificationMessage(`✓ Visual document intake complete! Analyzed sample competitor matrix and recorded SHA-256 hash.`);
       await refetch();
+      refetchArtifacts();
       queryClient.invalidateQueries({ queryKey: ['evidence', missionId] });
       queryClient.invalidateQueries({ queryKey: ['artifacts', missionId] });
+      queryClient.invalidateQueries({ queryKey: ['mission-artifacts', missionId] });
       setTimeout(() => setUploadStatus(null), 6000);
     } catch (err: any) {
       setUploadStatus(`Sample load failed: ${err.message}`);
@@ -708,6 +722,47 @@ ${c.hashtags.join(' ')}
                 {uploadStatus || 'PNG, JPG, SVG supported. File is cryptographically hashed and attached to evidence DAG.'}
               </span>
             </div>
+
+            {/* Display Ingested Visual Documents */}
+            {uploadedVisualArtifacts.length > 0 && (
+              <div className="pt-3 border-t border-slate-100 dark:border-workspace-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>Verified Visual Documents Attached to Ledger ({uploadedVisualArtifacts.length})</span>
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-mono">Real-time DAG Anchored</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {uploadedVisualArtifacts.map((art) => (
+                    <div
+                      key={art.id}
+                      className="p-3.5 rounded-xl bg-slate-50 dark:bg-workspace-850 border border-slate-200 dark:border-workspace-700 flex items-center gap-3.5 shadow-2xs"
+                    >
+                      <div className="w-12 h-12 rounded-lg bg-slate-900 overflow-hidden flex items-center justify-center shrink-0 border border-slate-200 dark:border-workspace-700">
+                        <img
+                          src={`/api/v1/missions/${missionId}/artifacts/${art.id}/view`}
+                          alt={art.filename}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{art.filename}</p>
+                        <p className="text-[10px] text-cyan-600 dark:text-cyan-400 font-mono truncate">SHA: {art.hash.slice(0, 16)}...</p>
+                        <div className="flex items-center gap-2 pt-0.5">
+                          <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                            Verified
+                          </span>
+                          <span className="text-[9px] text-slate-400 font-mono">
+                            {(art.sizeBytes / 1024).toFixed(1)} KB
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* SECTION C: TEXTUAL CREATIVE BLUEPRINT SPECIFICATIONS */}

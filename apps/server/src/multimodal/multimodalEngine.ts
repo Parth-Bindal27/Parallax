@@ -8,7 +8,9 @@ import type {
   CreativeAssetSpec,
   VisionAsset,
   AdaLAuditExecution,
-  EvidenceRecord
+  EvidenceRecord,
+  Source,
+  Snapshot
 } from '@parallax/shared';
 import { repo } from '../database/repository.js';
 import { logger } from '../observability/logger.js';
@@ -385,12 +387,50 @@ export class MultimodalEngine {
       uploadedAt: new Date().toISOString()
     };
 
-    // Create EvidenceRecord
+    // Ensure valid Source exists for visual upload
+    let sources = repo.getSources(missionId);
+    let source = sources.find(s => s.domain === 'local-upload') || sources[0];
+    if (!source) {
+      source = {
+        id: uuidv4(),
+        missionId,
+        url: `upload://${encodeURIComponent(originalFilename)}`,
+        canonicalUrl: `upload://${encodeURIComponent(originalFilename)}`,
+        domain: 'local-upload',
+        title: `Visual Document: ${originalFilename}`,
+        isPermitted: true,
+        isAccessible: true,
+        firstDiscoveredAt: new Date().toISOString(),
+        lastCheckedAt: new Date().toISOString()
+      };
+      repo.createSource(source);
+    }
+
+    // Create Snapshot for the uploaded visual artifact
+    const snapshotId = uuidv4();
+    const snapshot: Snapshot = {
+      id: snapshotId,
+      sourceId: source.id,
+      missionId,
+      version: 1,
+      captureTime: new Date().toISOString(),
+      contentHash: hash,
+      rawStoragePath: storagePath,
+      normalizedText: `Visual Document: ${originalFilename} (SHA-256: ${hash})`,
+      title: `Visual Intake: ${originalFilename}`,
+      statusCode: 200,
+      headers: { 'content-type': mimeType },
+      previousSnapshotId: null,
+      hasChangedFromPrevious: false
+    };
+    repo.createSnapshot(snapshot);
+
+    // Create EvidenceRecord anchored to the genuine Source and Snapshot
     const evidenceRecord: EvidenceRecord = {
       id: uuidv4(),
       missionId,
-      sourceId: 'visual-upload-source',
-      snapshotId: 'visual-upload-snapshot',
+      sourceId: source.id,
+      snapshotId: snapshot.id,
       exactExcerpt: `Visual evidence captured from user upload '${originalFilename}'. SHA-256: ${hash.slice(0, 16)}`,
       surroundingContext: `User uploaded image verified with size ${sizeBytes} bytes.`,
       locator: { selector: 'visual_document_intake' },
