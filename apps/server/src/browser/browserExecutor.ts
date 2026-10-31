@@ -326,6 +326,17 @@ export class BrowserExecutor {
 
         await page.waitForTimeout(1000);
 
+        const postAuthTitle = await page.title().catch(() => 'Authenticated Workspace');
+        const postAuthHtml = await page.content().catch(() => '');
+        const rawInnerText = await page.evaluate(() => {
+          const scripts = document.querySelectorAll('script, style, noscript, svg, nav, footer');
+          scripts.forEach(s => s.remove());
+          return document.body ? document.body.innerText : '';
+        }).catch(() => '');
+        const postAuthNormalizedText = this.normalizePageText(
+          rawInnerText || `Authenticated user workspace session for ${formData.username || 'user'}`
+        );
+
         const screenshotsDir = path.resolve(process.cwd(), 'data/snapshots/screenshots');
         if (!fs.existsSync(screenshotsDir)) {
           fs.mkdirSync(screenshotsDir, { recursive: true });
@@ -337,6 +348,9 @@ export class BrowserExecutor {
         return {
           success: true,
           newUrl: page.url(),
+          title: postAuthTitle || 'Authenticated Portal',
+          html: postAuthHtml,
+          normalizedText: postAuthNormalizedText,
           screenshotPath: `/api/v1/screenshots/${postAuthFilename}`,
           message: clicked
             ? 'Credentials submitted and form dispatched successfully.'
@@ -346,6 +360,42 @@ export class BrowserExecutor {
       { inputValue: `Credentials for ${formData.username || 'user'}` }
     );
 
+    return result;
+  }
+
+  /**
+   * Captures snapshot of whatever page is currently active in Playwright session
+   */
+  async snapshotCurrentPage(missionId: string, sourceId?: string): Promise<PageSnapshotResult> {
+    const { result, event } = await this.executeAction<PageSnapshotResult>(
+      missionId,
+      'SNAPSHOT',
+      'active_page',
+      async (page: Page) => {
+        const title = await page.title().catch(() => 'Active Authenticated Page');
+        const html = await page.content().catch(() => '');
+        const rawInnerText = await page.evaluate(() => {
+          const scripts = document.querySelectorAll('script, style, noscript, svg, nav, footer');
+          scripts.forEach(s => s.remove());
+          return document.body ? document.body.innerText : '';
+        }).catch(() => '');
+        const normalizedText = this.normalizePageText(rawInnerText || 'Authenticated Session State');
+
+        return {
+          title: title || 'Active Page',
+          url: page.url(),
+          statusCode: 200,
+          html,
+          normalizedText,
+          headings: [],
+          links: [],
+          hasLoginForm: false
+        };
+      },
+      { sourceId }
+    );
+
+    result.screenshotPath = event.screenshotPath;
     return result;
   }
 

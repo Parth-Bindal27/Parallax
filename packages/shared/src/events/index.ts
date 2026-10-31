@@ -32,7 +32,9 @@ export type MissionEventType =
   | 'mission_resumed'
   | 'mission_cancelled'
   | 'mission_completed'
-  | 'mission_failed';
+  | 'mission_failed'
+  | 'model_resuming_browsing'
+  | 'model_browsing_completed';
 
 export interface MissionEvent<T = Record<string, unknown>> {
   id: string;

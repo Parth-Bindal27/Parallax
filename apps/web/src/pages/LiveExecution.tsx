@@ -24,7 +24,8 @@ import {
   EyeOff,
   User,
   Lock,
-  ArrowRight
+  ArrowRight,
+  Compass
 } from 'lucide-react';
 import { api } from '../api/client.js';
 import type { BrowserActionEvent, MissionEvent, SourceDriftReport } from '@parallax/shared';
@@ -43,6 +44,8 @@ export function LiveExecution() {
   const [latestDriftReport, setLatestDriftReport] = useState<SourceDriftReport | null>(null);
   const [signInCredentials, setSignInCredentials] = useState<Record<string, { username: string; password: string; token: string }>>({});
   const [showPassword, setShowPassword] = useState<Record<string, boolean>>({});
+  const [isAutoResuming, setIsAutoResuming] = useState(false);
+  const [autoResumeMessage, setAutoResumeMessage] = useState<string | null>(null);
 
   // If no mission ID, redirect to workspace
   useEffect(() => {
@@ -125,6 +128,27 @@ export function LiveExecution() {
         if (parsed.type.includes('approval')) {
           refetchApprovals();
         }
+        if (parsed.type === 'model_resuming_browsing') {
+          setIsAutoResuming(true);
+          setAutoResumeMessage((parsed.payload?.message as string) || 'Autonomous model resumed browsing into authenticated portal...');
+          refetchActions();
+          refetchMission();
+        }
+        if (parsed.type === 'model_browsing_completed') {
+          setIsAutoResuming(false);
+          setAutoResumeMessage((parsed.payload?.message as string) || '✓ Model completed authenticated browsing & extracted verified claims.');
+          refetchMission();
+          refetchActions();
+          refetchClaims();
+          refetchEvidence();
+          queryClient.invalidateQueries({ queryKey: ['snapshots', missionId] });
+          queryClient.invalidateQueries({ queryKey: ['artifacts', missionId] });
+          setTimeout(() => setAutoResumeMessage(null), 10000);
+        }
+        if (parsed.type === 'source_captured') {
+          queryClient.invalidateQueries({ queryKey: ['snapshots', missionId] });
+          queryClient.invalidateQueries({ queryKey: ['sources', missionId] });
+        }
       } catch (err) {
         console.error('Failed to parse SSE event', err);
       }
@@ -154,10 +178,17 @@ export function LiveExecution() {
   const resolveApprovalMutation = useMutation({
     mutationFn: ({ approvalId, decision, formData }: { approvalId: string; decision: 'approve' | 'deny'; formData?: Record<string, string> }) =>
       api.resolveApproval(approvalId, decision, undefined, formData),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       refetchApprovals();
       refetchActions();
       queryClient.invalidateQueries({ queryKey: ['actions', missionId] });
+      queryClient.invalidateQueries({ queryKey: ['claims', missionId] });
+      queryClient.invalidateQueries({ queryKey: ['evidence', missionId] });
+      queryClient.invalidateQueries({ queryKey: ['snapshots', missionId] });
+      if (variables.decision === 'approve') {
+        setIsAutoResuming(true);
+        setAutoResumeMessage('Credentials submitted. Model auto-resuming browsing into protected workspace...');
+      }
     }
   });
 
@@ -385,6 +416,50 @@ export function LiveExecution() {
           </div>
         </div>
       </div>
+
+      {/* Auto-Resumed Browsing Notification Banner */}
+      {(isAutoResuming || autoResumeMessage) && (
+        <div
+          className={`p-4 rounded-2xl border-2 transition-all duration-300 shadow-md flex items-center justify-between gap-4 ${
+            isAutoResuming
+              ? 'bg-cyan-50/90 dark:bg-cyan-950/40 border-cyan-400 dark:border-cyan-500/60 animate-pulse'
+              : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-500/60'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className={`w-9 h-9 rounded-xl flex items-center justify-center text-white ${
+                isAutoResuming ? 'bg-cyan-500 animate-spin' : 'bg-emerald-500'
+              }`}
+            >
+              {isAutoResuming ? <Compass className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                  {isAutoResuming ? 'Model Browsing in Progress' : 'Authenticated Browsing Complete'}
+                </h4>
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                    isAutoResuming
+                      ? 'bg-cyan-100 dark:bg-cyan-500/30 text-cyan-900 dark:text-cyan-200'
+                      : 'bg-emerald-100 dark:bg-emerald-500/30 text-emerald-900 dark:text-emerald-200'
+                  }`}
+                >
+                  {isAutoResuming ? 'Autonomous Live Session' : 'Lineage Updated'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">{autoResumeMessage}</p>
+            </div>
+          </div>
+          {isAutoResuming && (
+            <div className="flex items-center gap-2 text-xs font-mono text-cyan-700 dark:text-cyan-300">
+              <span className="w-2 h-2 rounded-full bg-cyan-500 animate-ping" />
+              <span>Browsing Viewport Active</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Pending Approval Dialog (if policy stopped action or requires Human Interaction) */}
       {pendingApprovals.length > 0 && (

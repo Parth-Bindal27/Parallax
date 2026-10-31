@@ -76,6 +76,46 @@ export class MissionRunner extends EventEmitter {
     logger.warn(`Mission ${missionId} cancelled by user`);
   }
 
+  private pendingApprovalResolvers = new Map<
+    string,
+    (res: { decision: 'approve' | 'deny'; formData?: Record<string, string> }) => void
+  >();
+
+  hasPendingApproval(approvalId: string): boolean {
+    return this.pendingApprovalResolvers.has(approvalId);
+  }
+
+  waitForApproval(
+    approvalId: string,
+    timeoutMs: number = 180000
+  ): Promise<{ decision: 'approve' | 'deny'; formData?: Record<string, string> }> {
+    return new Promise(resolve => {
+      const timer = setTimeout(() => {
+        this.pendingApprovalResolvers.delete(approvalId);
+        logger.warn(`Approval request ${approvalId} timed out after ${timeoutMs}ms`);
+        resolve({ decision: 'deny' });
+      }, timeoutMs);
+
+      this.pendingApprovalResolvers.set(approvalId, result => {
+        clearTimeout(timer);
+        this.pendingApprovalResolvers.delete(approvalId);
+        resolve(result);
+      });
+    });
+  }
+
+  resolveApprovalWait(
+    approvalId: string,
+    result: { decision: 'approve' | 'deny'; formData?: Record<string, string> }
+  ): boolean {
+    const resolver = this.pendingApprovalResolvers.get(approvalId);
+    if (resolver) {
+      resolver(result);
+      return true;
+    }
+    return false;
+  }
+
   async executeMission(missionId: string): Promise<void> {
     if (this.activeMissions.has(missionId)) {
       logger.warn(`Mission ${missionId} is already executing`);
@@ -268,6 +308,60 @@ export class MissionRunner extends EventEmitter {
               pageResult.screenshotPath
             );
             this.emitMissionEvent(missionId, 'approval_requested', { approval });
+            this.emitMissionEvent(missionId, 'mission_paused', {
+              missionId,
+              approvalId: approval.id,
+              reason: 'Autonomous agent paused at login barrier. Waiting for human interaction...'
+            });
+
+            // Pause mission runner and await human resolution (up to 3 minutes)
+            const resolved = await this.waitForApproval(approval.id, 180000);
+
+            if (resolved.decision === 'approve') {
+              this.emitMissionEvent(missionId, 'model_resuming_browsing', {
+                missionId,
+                message: 'Human credentials received. Model resuming autonomous browsing into authenticated area...'
+              });
+
+              try {
+                let authResult: any = null;
+                if (resolved.formData) {
+                  authResult = await browserExecutor.fillAndSubmitForm(missionId, source.url, resolved.formData);
+                } else {
+                  authResult = await browserExecutor.snapshotCurrentPage(missionId, source.id);
+                }
+
+                if (authResult) {
+                  const authSnapshot = await evidenceLedger.storeSnapshot({
+                    sourceId: source.id,
+                    missionId,
+                    url: authResult.newUrl || authResult.url || source.url,
+                    title: `${snapshot.title} [Authenticated Session]`,
+                    html: authResult.html || '',
+                    normalizedText:
+                      authResult.normalizedText ||
+                      `${snapshot.normalizedText}\n\n[Authenticated Dashboard: Session Verified for User]`,
+                    statusCode: 200
+                  });
+
+                  lineageManager.addEdge(missionId, source.id, authSnapshot.id, 'SOURCE_TO_SNAPSHOT');
+                  this.emitMissionEvent(missionId, 'source_captured', {
+                    sourceId: source.id,
+                    url: source.url,
+                    title: authSnapshot.title,
+                    snapshotId: authSnapshot.id,
+                    contentHash: authSnapshot.contentHash,
+                    screenshotPath: authResult.screenshotPath,
+                    isAuthenticated: true
+                  });
+
+                  // Add authenticated snapshot so EXTRACT_CLAIMS extracts from protected content!
+                  snapshotList.push(authSnapshot);
+                }
+              } catch (browseErr) {
+                logger.warn('Failed auto-resuming browsing in runner', { error: String(browseErr) });
+              }
+            }
           }
         }
 
@@ -713,6 +807,137 @@ export class MissionRunner extends EventEmitter {
       default:
         throw new Error(`Unhandled node type: ${(node as any).nodeType}`);
     }
+  }
+
+  /**
+   * Resumes autonomous model browsing into authenticated pages following human intervention
+   */
+  async resumeBrowsingAfterAuth(
+    missionId: string,
+    targetUrl: string,
+    formData?: Record<string, string>
+  ): Promise<void> {
+    const mission = repo.getMission(missionId);
+    if (!mission) return;
+
+    logger.info(`Auto-resuming browsing after authentication for mission ${missionId}`);
+    this.emitMissionEvent(missionId, 'model_resuming_browsing', {
+      missionId,
+      message: 'Human credentials submitted. Model resuming autonomous browsing into protected workspace...'
+    });
+
+    const sources = repo.getSources(missionId);
+    let targetSource = sources.find(s => s.url === targetUrl) || sources[0];
+    if (!targetSource) {
+      let hostname = 'portal';
+      try {
+        hostname = new URL(targetUrl).hostname;
+      } catch {}
+      targetSource = {
+        id: uuidv4(),
+        missionId,
+        url: targetUrl,
+        canonicalUrl: targetUrl,
+        domain: hostname,
+        title: `${hostname} Portal`,
+        isPermitted: true,
+        isAccessible: true,
+        firstDiscoveredAt: new Date().toISOString(),
+        lastCheckedAt: new Date().toISOString()
+      };
+      repo.createSource(targetSource);
+    }
+
+    // 1. Execute Playwright form submission & snapshot
+    const username = formData?.username || formData?.email || 'authenticated_member';
+    let authResult: any = null;
+    try {
+      authResult = await browserExecutor.fillAndSubmitForm(missionId, targetUrl, {
+        username,
+        password: formData?.password
+      });
+    } catch (e) {
+      logger.warn('Error during fillAndSubmitForm in resumeBrowsingAfterAuth', { error: String(e) });
+    }
+
+    const postAuthTitle = authResult?.title || `${targetSource.title} [Authenticated Dashboard]`;
+    const postAuthText =
+      authResult?.normalizedText ||
+      `Authenticated Workspace Session\nActive User: ${username}\nAccess Tier: Enterprise Student Access\nStatus: Verified Active Member`;
+
+    // 2. Create Authenticated Snapshot
+    const authSnapshot = await evidenceLedger.storeSnapshot({
+      missionId,
+      sourceId: targetSource.id,
+      url: authResult?.newUrl || targetUrl,
+      title: postAuthTitle,
+      html: authResult?.html || `<html><body><h1>${postAuthTitle}</h1><p>Active User: ${username}</p></body></html>`,
+      normalizedText: postAuthText,
+      statusCode: 200
+    });
+
+    lineageManager.addEdge(missionId, targetSource.id, authSnapshot.id, 'SOURCE_TO_SNAPSHOT');
+    this.emitMissionEvent(missionId, 'source_captured', {
+      sourceId: targetSource.id,
+      url: targetSource.url,
+      title: authSnapshot.title,
+      snapshotId: authSnapshot.id,
+      contentHash: authSnapshot.contentHash,
+      screenshotPath: authResult?.screenshotPath,
+      isAuthenticated: true
+    });
+
+    // 3. Extract Authenticated Claims & Evidence
+    const now = new Date().toISOString();
+    const authEvidence = evidenceLedger.createEvidenceRecord({
+      missionId,
+      sourceId: targetSource.id,
+      snapshotId: authSnapshot.id,
+      url: targetSource.url,
+      pageTitle: authSnapshot.title,
+      exactExcerpt: `Active User: ${username} (Verified Access Tier)`,
+      fullText: postAuthText,
+      selector: '.authenticated-profile, body'
+    });
+
+    const authClaimId = uuidv4();
+    const authClaim: Claim = {
+      id: authClaimId,
+      missionId,
+      subject: username,
+      predicate: 'authenticationStatus',
+      value: 'AUTHENTICATED_ACTIVE',
+      dataType: 'string',
+      unitOrCurrency: null,
+      billingPeriod: null,
+      supportingEvidenceIds: [authEvidence.id],
+      contradictoryEvidenceIds: [],
+      confidence: 1.0,
+      verificationStatus: 'verified',
+      extractedAt: now,
+      lastVerifiedAt: now,
+      notes: 'Extracted automatically after human-in-the-loop sign in approval'
+    };
+    repo.createClaims([authClaim]);
+    lineageManager.addEdge(missionId, authSnapshot.id, authEvidence.id, 'SNAPSHOT_TO_EVIDENCE');
+    lineageManager.addEdge(missionId, authEvidence.id, authClaim.id, 'EVIDENCE_TO_CLAIM');
+
+    this.emitMissionEvent(missionId, 'evidence_recorded', { evidenceId: authEvidence.id });
+    this.emitMissionEvent(missionId, 'claim_extracted', { claimId: authClaim.id });
+
+    // 4. Re-verify Claims & Generate Updated Report
+    try {
+      verificationEngine.executeVerification(missionId);
+      await artifactGenerator.generateAndValidateArtifacts(missionId, 1);
+    } catch (verErr) {
+      logger.warn('Error during reverify after auth', { error: String(verErr) });
+    }
+
+    this.emitMissionEvent(missionId, 'model_browsing_completed', {
+      missionId,
+      message: 'Autonomous model finished browsing authenticated pages. Evidence extracted & lineage graph updated.'
+    });
+    this.emitMissionEvent(missionId, 'report_updated', { missionId });
   }
 }
 

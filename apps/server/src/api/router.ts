@@ -489,48 +489,30 @@ apiRouter.post('/api/v1/approvals/:id/resolve', async (req: Request, res: Respon
     const status = parsed.data.decision === 'approve' ? 'approved' : 'denied';
     repo.resolveApproval(req.params.id, status);
 
-    // If human filled credentials or form data, automate filling in Playwright browser session:
-    if (parsed.data.decision === 'approve' && parsed.data.formData) {
-      const missionId = req.body.missionId;
-      const targetUrl = req.body.target || 'https://app.linear.app/login';
-      const username = parsed.data.formData.username || parsed.data.formData.email || 'human_user';
-      const password = parsed.data.formData.password;
+    const missionId = req.body.missionId;
+    const targetUrl = req.body.target || 'https://app.linear.app/login';
 
-      let fillResult: any = null;
-      try {
-        fillResult = await browserExecutor.fillAndSubmitForm(missionId, targetUrl, {
-          username,
-          password
-        });
-      } catch (err) {
-        logger.warn('Automated form fill warning', { error: String(err) });
-      }
+    // 1. Check if active MissionRunner is waiting on this approval:
+    const wasWaiting = missionRunner.resolveApprovalWait(req.params.id, {
+      decision: parsed.data.decision,
+      formData: parsed.data.formData
+    });
 
-      const actionId = uuidv4();
-      const actionLog = {
-        actionId,
-        missionId: missionId || 'active',
-        actionType: 'FILL' as const,
-        url: targetUrl,
-        selector: 'input[name="username"], input[name="password"]',
-        inputValue: `Credentials submitted by Human HITL: ${username} (password: [PROTECTED])`,
-        startTime: new Date().toISOString(),
-        completionTime: new Date().toISOString(),
-        status: 'performed' as const,
-        screenshotPath: fillResult?.screenshotPath
-      };
+    if (missionId) {
+      missionRunner.emitMissionEvent(missionId, 'approval_resolved', {
+        approvalId: req.params.id,
+        status,
+        decision: parsed.data.decision,
+        humanInputReceived: !!parsed.data.formData
+      });
+    }
 
-      if (missionId) {
-        repo.createActionLog(actionLog);
-        missionRunner.emitMissionEvent(missionId, 'browser_action_executed', { action: actionLog, manual: true });
-        missionRunner.emitMissionEvent(missionId, 'approval_resolved', {
-          approvalId: req.params.id,
-          status,
-          decision: 'approve',
-          humanInputReceived: true,
-          fillResult
-        });
-      }
+    // 2. If runner was not actively waiting (e.g. simulation, background, or completed mission)
+    // and human approved, trigger auto-resumed model browsing:
+    if (!wasWaiting && parsed.data.decision === 'approve' && missionId) {
+      missionRunner.resumeBrowsingAfterAuth(missionId, targetUrl, parsed.data.formData).catch(err => {
+        logger.error('Error during auto-resume browsing in resolve approval', { error: String(err) });
+      });
     }
 
     res.json({ success: true, approvalId: req.params.id, status: parsed.data.decision });
